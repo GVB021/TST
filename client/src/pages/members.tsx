@@ -22,6 +22,7 @@ const STUDIO_ROLES = [
   { value: "diretor", label: pt.roles.diretor },
   { value: "engenheiro_audio", label: pt.roles.engenheiro_audio },
   { value: "dublador", label: pt.roles.dublador },
+  { value: "aluno", label: pt.roles.aluno },
 ];
 
 const Members = memo(function Members({ studioId }: { studioId: string }) {

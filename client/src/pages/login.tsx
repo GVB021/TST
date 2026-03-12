@@ -37,10 +37,13 @@ export default function Login() {
     }
   }, [mode]);
 
-  if (user) {
-    setLocation("/studios");
-    return null;
-  }
+  useEffect(() => {
+    if (user) {
+      setLocation("/studios");
+    }
+  }, [user, setLocation]);
+
+  if (user) return null;
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();

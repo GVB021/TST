@@ -47,7 +47,7 @@ export const pt = {
     staff: "Equipe",
     admin: "Painel Admin",
     platform: "Plataforma",
-    members: "Membros",
+    members: "Secretaria",
     takes: "Takes de Audio",
     profile: "Perfil",
   },
@@ -245,7 +245,7 @@ export const pt = {
     memberRejected: "Membro rejeitado",
   },
   members: {
-    title: "Membros do Estudio",
+    title: "Secretaria",
     pendingMembers: "Membros Pendentes",
     approvedMembers: "Membros Aprovados",
     approve: "Aprovar",

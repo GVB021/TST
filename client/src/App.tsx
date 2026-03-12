@@ -11,11 +11,12 @@ import { ErrorBoundary } from "@/components/ui/error-boundary";
 
 const NotFound = lazy(() => import("@/pages/not-found"));
 const Login = lazy(() => import("@/pages/login"));
+const SecretariaLogin = lazy(() => import("@/pages/secretaria-login"));
 const StudioSelect = lazy(() => import("@/pages/studio-select"));
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 const Productions = lazy(() => import("@/pages/productions"));
 const Sessions = lazy(() => import("@/pages/sessions"));
-const RecordingRoom = lazy(() => import("@/pages/room"));
+const RecordingRoom = lazy(() => import("@/pages/room").then(module => ({ default: module.default })));
 const Staff = lazy(() => import("@/pages/staff"));
 const Admin = lazy(() => import("@/pages/admin"));
 const Notifications = lazy(() => import("@/pages/notifications"));
@@ -87,6 +88,7 @@ function Router() {
       <Switch>
         <Route path="/" component={() => <Redirect to="/studios" />} />
         <Route path="/login" component={Login} />
+        <Route path="/secretaria/login" component={SecretariaLogin} />
         <Route path="/studios" component={StudioSelectRoute} />
 
         <Route path="/admin">

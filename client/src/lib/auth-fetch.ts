@@ -16,12 +16,23 @@ export async function authFetch(url: string, options: RequestInit = {}) {
   if (!res.ok) {
     let errorMsg = res.statusText;
     try {
-      const data = await res.json();
-      if (data.message) errorMsg = data.message;
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const data = await res.json();
+        if (data.message) errorMsg = data.message;
+      } else {
+        const text = await res.text();
+        if (text) errorMsg = text.slice(0, 200);
+      }
     } catch {}
     throw new Error(errorMsg);
   }
 
   if (res.status === 204) return null;
-  return res.json();
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return res.json();
+  }
+  const text = await res.text().catch(() => "");
+  throw new Error(text ? `Resposta invalida do servidor: ${text.slice(0, 200)}` : "Resposta invalida do servidor");
 }

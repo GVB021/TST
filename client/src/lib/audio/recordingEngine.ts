@@ -15,6 +15,7 @@ export interface RecordingResult {
   durationSeconds: number;
 }
 
+let workletNode: AudioWorkletNode | null = null;
 let scriptProcessorNode: ScriptProcessorNode | null = null;
 let recordedChunks: Float32Array[] = [];
 let totalSamples = 0;
@@ -29,6 +30,28 @@ export function startCapture(micState: MicrophoneState): void {
     });
   }
 
+  // Use AudioWorklet if in high-fidelity mode and module is loaded
+  if (micState.captureMode === "high-fidelity") {
+    try {
+      workletNode = new AudioWorkletNode(micState.audioContext, "audio-processor");
+      workletNode.port.onmessage = (event) => {
+        const input = event.data; // Float32Array
+        const copy = new Float32Array(input.length);
+        copy.set(input);
+        recordedChunks.push(copy);
+        totalSamples += copy.length;
+      };
+      
+      micState.gainNode.connect(workletNode);
+      workletNode.connect(micState.audioContext.destination); // Keep alive
+      console.log("[RecEngine] AudioWorklet capture started (High-Fidelity)");
+      return;
+    } catch (e) {
+      console.warn("[RecEngine] AudioWorklet failed, falling back to ScriptProcessor", e);
+    }
+  }
+
+  // Fallback / Standard capture
   scriptProcessorNode = micState.audioContext.createScriptProcessor(
     BUFFER_SIZE,
     1,
@@ -45,11 +68,21 @@ export function startCapture(micState: MicrophoneState): void {
 
   micState.gainNode.connect(scriptProcessorNode);
   scriptProcessorNode.connect(micState.audioContext.destination);
-  console.log("[RecEngine] Capture started, sampleRate:", micState.audioContext.sampleRate);
+  console.log("[RecEngine] ScriptProcessor capture started, sampleRate:", micState.audioContext.sampleRate);
 }
 
 export function stopCapture(micState: MicrophoneState): RecordingResult {
   console.log("[RecEngine] Stopping capture...", { chunksCount: recordedChunks.length, totalSamples });
+
+  if (workletNode) {
+    try {
+      micState.gainNode.disconnect(workletNode);
+      workletNode.disconnect();
+    } catch (e) {
+      console.warn("[RecEngine] worklet disconnect warning:", e);
+    }
+    workletNode = null;
+  }
 
   if (scriptProcessorNode) {
     try {

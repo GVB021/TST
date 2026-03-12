@@ -1,5 +1,5 @@
 import { useParams, Link } from "wouter";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { authFetch } from "@/lib/auth-fetch";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
@@ -37,6 +37,7 @@ import {
   requestMicrophone,
   releaseMicrophone,
   setGain,
+  getAnalyserData,
   type MicrophoneState,
   type VoiceCaptureMode,
 } from "@/lib/audio/microphoneManager";
@@ -258,6 +259,8 @@ interface DeviceSettings {
   inputGain: number;
   monitorVolume: number;
   voiceCaptureMode: VoiceCaptureMode;
+  force48k?: boolean;
+  disableSystemProcessing?: boolean;
 }
 
 function DeviceSettingsPanel({
@@ -265,20 +268,105 @@ function DeviceSettingsPanel({
   onClose,
   settings,
   onSettingsChange,
+  micState,
 }: {
   open: boolean;
   onClose: () => void;
   settings: DeviceSettings;
   onSettingsChange: (s: DeviceSettings) => void;
+  micState: MicrophoneState | null;
 }) {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [permissionGranted, setPermissionGranted] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rafRef = useRef<number>(0);
 
   useEffect(() => {
     if (!open) return;
-    navigator.mediaDevices.enumerateDevices().then((devs) => {
-      setDevices(devs);
-    });
+
+    const refreshDevices = () => {
+      navigator.mediaDevices.enumerateDevices().then((devs) => {
+        setDevices(devs);
+        const hasLabels = devs.some((d) => d.label.length > 0);
+        setPermissionGranted(hasLabels);
+      });
+    };
+
+    refreshDevices();
+    navigator.mediaDevices.addEventListener("devicechange", refreshDevices);
+    return () => navigator.mediaDevices.removeEventListener("devicechange", refreshDevices);
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !micState || !canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const draw = () => {
+      const data = getAnalyserData(micState);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i];
+      const avg = sum / data.length;
+      const norm = Math.min(1, (avg / 128) * 1.5); 
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      ctx.fillStyle = "rgba(255,255,255,0.05)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const width = canvas.width * norm;
+      const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
+      gradient.addColorStop(0, "#10b981");
+      gradient.addColorStop(0.6, "#f59e0b");
+      gradient.addColorStop(1, "#ef4444");
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, canvas.height);
+
+      rafRef.current = requestAnimationFrame(draw);
+    };
+
+    draw();
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [open, micState]);
+
+  const requestPerms = async () => {
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const devs = await navigator.mediaDevices.enumerateDevices();
+      setDevices(devs);
+      setPermissionGranted(true);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const playTestSound = () => {
+    try {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(440, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.3);
+      
+      // @ts-ignore
+      if (typeof ctx.setSinkId === 'function' && settings.outputDeviceId) {
+          // @ts-ignore
+          ctx.setSinkId(settings.outputDeviceId).catch(console.error);
+      }
+    } catch (e) {
+      console.error("Audio test failed", e);
+    }
+  };
 
   if (!open) return null;
 
@@ -287,7 +375,7 @@ function DeviceSettingsPanel({
 
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
-      <div className="rounded-2xl w-[400px] overflow-hidden" style={{ background: "rgba(15,15,30,0.92)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.10)", boxShadow: "0 12px 48px rgba(0,0,0,0.5)" }}>
+      <div className="rounded-2xl w-[480px] overflow-hidden" style={{ background: "rgba(15,15,30,0.95)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.10)", boxShadow: "0 12px 48px rgba(0,0,0,0.5)" }}>
         <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
           <span className="text-sm font-semibold" style={{ color: "hsl(210 40% 96%)" }}>Configuracoes de Dispositivo</span>
           <button
@@ -298,11 +386,26 @@ function DeviceSettingsPanel({
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="px-6 py-5 flex flex-col gap-5">
-          <div>
-            <label className="vhub-label mb-2 block">Microfone</label>
+        
+        {!permissionGranted && (
+          <div className="px-6 py-4 bg-yellow-500/10 border-b border-yellow-500/20">
+            <p className="text-xs text-yellow-200 mb-2">Permissao de microfone necessaria para listar dispositivos.</p>
+            <button onClick={requestPerms} className="vhub-btn-xs vhub-btn-secondary">Conceder Permissao</button>
+          </div>
+        )}
+
+        <div className="px-6 py-5 flex flex-col gap-6">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="vhub-label block">Microfone</label>
+              {settings.inputDeviceId && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20">
+                  Ativo
+                </span>
+              )}
+            </div>
             <select
-              className="w-full h-9 rounded-lg px-3 text-sm"
+              className="w-full h-9 rounded-lg px-3 text-sm bg-black/20 border border-white/10 text-white focus:border-blue-500 outline-none"
               value={settings.inputDeviceId}
               onChange={(e) => onSettingsChange({ ...settings, inputDeviceId: e.target.value })}
               data-testid="select-microphone"
@@ -313,31 +416,46 @@ function DeviceSettingsPanel({
                 </option>
               ))}
             </select>
+            
+            <div className="h-2 rounded-full overflow-hidden bg-black/40 border border-white/5 relative">
+              <canvas ref={canvasRef} width={430} height={8} className="w-full h-full block" />
+            </div>
           </div>
-          <div>
-            <label className="vhub-label mb-2 block">Alto-falante</label>
-            <select
-              className="w-full h-9 rounded-lg px-3 text-sm"
-              value={settings.outputDeviceId}
-              onChange={(e) => onSettingsChange({ ...settings, outputDeviceId: e.target.value })}
-              data-testid="select-speaker"
-            >
-              {speakers.length === 0 ? (
-                <option value="">Padrao do sistema</option>
-              ) : (
-                speakers.map((d) => (
-                  <option key={d.deviceId} value={d.deviceId}>
-                    {d.label || `Alto-falante ${d.deviceId.slice(0, 8)}`}
-                  </option>
-                ))
-              )}
-            </select>
+
+          <div className="space-y-3">
+            <label className="vhub-label block">Alto-falante (Monitor)</label>
+            <div className="flex gap-2">
+              <select
+                className="flex-1 h-9 rounded-lg px-3 text-sm bg-black/20 border border-white/10 text-white focus:border-blue-500 outline-none"
+                value={settings.outputDeviceId}
+                onChange={(e) => onSettingsChange({ ...settings, outputDeviceId: e.target.value })}
+                data-testid="select-speaker"
+              >
+                {speakers.length === 0 ? (
+                  <option value="">Padrao do sistema</option>
+                ) : (
+                  speakers.map((d) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {d.label || `Alto-falante ${d.deviceId.slice(0, 8)}`}
+                    </option>
+                  ))
+                )}
+              </select>
+              <button 
+                onClick={playTestSound}
+                className="h-9 px-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+                title="Testar som"
+              >
+                <Volume2 className="w-4 h-4 text-white/70" />
+              </button>
+            </div>
           </div>
-          <div className="flex flex-col gap-4">
+
+          <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-white/5 border border-white/5">
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="vhub-label">Ganho de Entrada</label>
-                <span className="text-xs font-mono" style={{ color: "rgba(255,255,255,0.50)" }}>{Math.round(settings.inputGain * 100)}%</span>
+              <div className="flex items-center justify-between mb-2">
+                <label className="vhub-label">Ganho (Input)</label>
+                <span className="text-xs font-mono text-white/50">{Math.round(settings.inputGain * 100)}%</span>
               </div>
               <input
                 type="range"
@@ -348,14 +466,14 @@ function DeviceSettingsPanel({
                 onChange={(e) =>
                   onSettingsChange({ ...settings, inputGain: parseFloat(e.target.value) })
                 }
-                className="w-full h-1.5 accent-blue-500"
+                className="w-full h-1.5 accent-blue-500 bg-white/10 rounded-full appearance-none cursor-pointer"
                 data-testid="slider-input-gain"
               />
             </div>
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="vhub-label">Volume do Monitor</label>
-                <span className="text-xs font-mono" style={{ color: "rgba(255,255,255,0.50)" }}>{Math.round(settings.monitorVolume * 100)}%</span>
+              <div className="flex items-center justify-between mb-2">
+                <label className="vhub-label">Volume (Output)</label>
+                <span className="text-xs font-mono text-white/50">{Math.round(settings.monitorVolume * 100)}%</span>
               </div>
               <input
                 type="range"
@@ -366,35 +484,52 @@ function DeviceSettingsPanel({
                 onChange={(e) =>
                   onSettingsChange({ ...settings, monitorVolume: parseFloat(e.target.value) })
                 }
-                className="w-full h-1.5 accent-blue-500"
+                className="w-full h-1.5 accent-blue-500 bg-white/10 rounded-full appearance-none cursor-pointer"
                 data-testid="slider-monitor-volume"
               />
             </div>
           </div>
+
           <div>
-            <label className="vhub-label mb-2 block">Modo de Captura de Voz</label>
+            <label className="vhub-label mb-2 block">Modo de Captura</label>
             <select
               value={settings.voiceCaptureMode}
               onChange={(e) => onSettingsChange({ ...settings, voiceCaptureMode: e.target.value as VoiceCaptureMode })}
-              className="w-full h-9 rounded-lg px-3 text-sm"
+              className="w-full h-9 rounded-lg px-3 text-sm bg-black/20 border border-white/10 text-white focus:border-blue-500 outline-none"
               data-testid="select-voice-capture-mode"
             >
-              <option value="studio">Studio Mode (Isolamento de Voz)</option>
-              <option value="original">Original Microphone (Som Natural)</option>
+              <option value="studio">Studio Mode (Processado)</option>
+              <option value="original">Microfone Original</option>
+              <option value="high-fidelity">High-End (Lossless 24-bit)</option>
             </select>
-            <p className="text-[10px] mt-1.5" style={{ color: "rgba(255,255,255,0.35)" }}>
+            <p className="text-[10px] mt-2 leading-relaxed" style={{ color: "rgba(255,255,255,0.4)" }}>
               {settings.voiceCaptureMode === "studio"
-                ? "Filtro passa-alta 80Hz + compressor + reducao de ruido. Ideal para estudio."
-                : "Captura crua sem processamento. Audio exatamente como o microfone capta."}
+                ? "Filtro passa-alta 80Hz + compressor + reducao de ruido. Ideal para ambientes ruidosos."
+                : settings.voiceCaptureMode === "high-fidelity"
+                ? "Captura RAW 24-bit via AudioWorklet. Desativa todo processamento do sistema. Requer interface de audio."
+                : "Captura padrao do navegador sem efeitos adicionais."}
             </p>
           </div>
-          <div className="flex justify-end">
+
+          {settings.voiceCaptureMode === "high-fidelity" && (
+            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 flex gap-3 items-start">
+              <div className="mt-0.5 w-2 h-2 shrink-0 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse" />
+              <div>
+                <p className="text-xs font-medium text-red-200">Controle Exclusivo de Hardware</p>
+                <p className="text-[10px] text-red-300/60 leading-tight mt-0.5">
+                  O sistema assumiu o controle do driver de audio para garantir 48kHz/24-bit com latencia zero.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2">
             <button
               onClick={onClose}
-              className="vhub-btn-sm vhub-btn-primary"
+              className="vhub-btn-sm vhub-btn-primary w-full sm:w-auto"
               data-testid="button-apply-device-settings"
             >
-              Aplicar
+              Concluido
             </button>
           </div>
         </div>
@@ -573,6 +708,8 @@ export default function RecordingRoom() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isLooping, setIsLooping] = useState(false);
+  const [loopSelectionMode, setLoopSelectionMode] = useState<"idle" | "selecting-start" | "selecting-end">("idle");
+  const [customLoop, setCustomLoop] = useState<{ start: number; end: number } | null>(null);
   const [preRoll, setPreRoll] = useState(1);
   const [postRoll, setPostRoll] = useState(1);
 
@@ -670,6 +807,57 @@ export default function RecordingRoom() {
     },
   });
 
+  const updateScriptLineMutation = useMutation({
+    mutationFn: async ({ lineIndex, text }: { lineIndex: number; text: string }) => {
+      if (!production?.id || !production?.scriptJson) throw new Error("Roteiro nao carregado");
+      const target = scriptLines[lineIndex];
+      if (!target) throw new Error("Linha invalida");
+
+      const parsed = JSON.parse(production.scriptJson);
+      const rawLines: Array<any> = Array.isArray(parsed) ? parsed : (parsed?.lines && Array.isArray(parsed.lines) ? parsed.lines : []);
+      if (!rawLines.length) throw new Error("Formato de roteiro invalido");
+
+      const idx = rawLines.findIndex((l: any) => {
+        const st = parseTimecode(l.start || l.tempo || l.timecode || l.tc || "00:00:00");
+        const ch = String(l.character || l.personagem || l.char || "");
+        return st === target.start && ch.toLowerCase() === String(target.character || "").toLowerCase();
+      });
+      const targetIdx = idx >= 0 ? idx : lineIndex;
+      if (!rawLines[targetIdx]) throw new Error("Linha nao encontrada no roteiro");
+
+      const updatedLine = { ...rawLines[targetIdx] };
+      if ("text" in updatedLine) {
+        updatedLine.text = text;
+      } else if ("fala" in updatedLine) {
+        updatedLine.fala = text;
+      } else {
+        updatedLine.text = text;
+      }
+
+      const nextLines = [...rawLines];
+      nextLines[targetIdx] = updatedLine;
+
+      const nextScriptJson = Array.isArray(parsed)
+        ? JSON.stringify(nextLines)
+        : JSON.stringify({ ...parsed, lines: nextLines });
+
+      return authFetch(`/api/studios/${studioId}/productions/${production.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ scriptJson: nextScriptJson }),
+      });
+    },
+    onSuccess: (_data, variables) => {
+      setLineEdits((prev) => ({ ...prev, [variables.lineIndex]: variables.text }));
+      setEditingLineIndex(null);
+      setEditingLineText("");
+      queryClient.invalidateQueries({ queryKey: ["/api/studios", studioId, "productions", production?.id] });
+      toast({ title: "Linha atualizada" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Erro ao salvar edicao", description: err?.message || "Falha", variant: "destructive" });
+    },
+  });
+
   const handleDownloadTake = useCallback(async (take: any) => {
     try {
       const res = await fetch(`/api/takes/${take.id}/download`, {
@@ -713,10 +901,53 @@ export default function RecordingRoom() {
   const isRemoteAction = useRef(false);
   const wsReconnectTimer = useRef<NodeJS.Timeout | null>(null);
 
+  const [globalControlEnabled, setGlobalControlEnabled] = useState(false);
+  const [controlPermissions, setControlPermissions] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(`vhub_control_perm_${sessionId}`);
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  const [controlMenuOpen, setControlMenuOpen] = useState(false);
+  const [presenceUsers, setPresenceUsers] = useState<Array<{ userId: string; name: string; role?: string }>>([]);
+  const [takesPopupOpen, setTakesPopupOpen] = useState(false);
+  const [editingLineIndex, setEditingLineIndex] = useState<number | null>(null);
+  const [editingLineText, setEditingLineText] = useState("");
+  const [lineEdits, setLineEdits] = useState<Record<number, string>>({});
+  const [takePreviewId, setTakePreviewId] = useState<string | null>(null);
+  const takePreviewAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const myStudioRole = useMemo(() => {
+    const role = session?.participants?.find((p: any) => p.userId === user?.id)?.role;
+    return String(role || "").toLowerCase();
+  }, [session, user]);
+
+  const isPrivileged = useMemo(() => {
+    if (user?.role === "platform_owner") return true;
+    const privilegedRoles = new Set([
+      "studio_admin",
+      "diretor",
+      "engenheiro_audio",
+      "owner",
+      "director",
+      "audio_engineer",
+      "engineer",
+      "admin",
+    ]);
+    return privilegedRoles.has(myStudioRole);
+  }, [user?.role, myStudioRole]);
+
+  const canControl = useMemo(() => {
+    return isPrivileged || globalControlEnabled || controlPermissions.has(user?.id || "");
+  }, [isPrivileged, globalControlEnabled, controlPermissions, user]);
+
   useEffect(() => {
     (async () => {
       try {
-        const state = await requestMicrophone(deviceSettings.voiceCaptureMode);
+        const state = await requestMicrophone(deviceSettings.voiceCaptureMode, deviceSettings.inputDeviceId);
         setGain(state, deviceSettings.inputGain);
         setMicState(state);
         setMicReady(true);
@@ -741,26 +972,82 @@ export default function RecordingRoom() {
   }, [micState, deviceSettings.inputGain]);
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || !user?.id) return;
 
     let destroyed = false;
 
     const connect = () => {
       if (destroyed) return;
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const ws = new WebSocket(`${protocol}//${window.location.host}/ws/video-sync?sessionId=${sessionId}`);
+      const role = encodeURIComponent(myStudioRole || String(user?.role || ""));
+      const name = encodeURIComponent(String((user as any)?.fullName || (user as any)?.displayName || (user as any)?.email || "Usuario"));
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws/video-sync?sessionId=${sessionId}&userId=${encodeURIComponent(user.id)}&role=${role}&name=${name}`);
       wsRef.current = ws;
 
       ws.onmessage = (event) => {
         try {
-          const msg = JSON.parse(event.data) as { type: string; currentTime: number; lineIndex?: number };
+          const msg = JSON.parse(event.data) as { type: string; currentTime?: number; lineIndex?: number; targetUserId?: string; permissions?: string[]; loopRange?: { start: number; end: number } | null; globalControl?: boolean; users?: Array<{ userId: string; name: string; role?: string }> };
+
+          // Permission updates
+          if (msg.type === "permission-sync" && Array.isArray(msg.permissions)) {
+            isRemoteAction.current = true;
+            setControlPermissions(new Set(msg.permissions));
+            if (typeof msg.globalControl === "boolean") setGlobalControlEnabled(msg.globalControl);
+            isRemoteAction.current = false;
+            return;
+          }
+          if (msg.type === "presence-sync" && Array.isArray(msg.users)) {
+            setPresenceUsers(msg.users);
+            return;
+          }
+          if (msg.type === "permission-granted" || msg.type === "grant-permission") {
+            if (msg.targetUserId) {
+              setControlPermissions((prev) => {
+                const next = new Set(prev);
+                next.add(msg.targetUserId!);
+                return next;
+              });
+            }
+          } else if (msg.type === "permission-revoked" || msg.type === "revoke-permission") {
+            if (msg.targetUserId) {
+              setControlPermissions((prev) => {
+                const next = new Set(prev);
+                next.delete(msg.targetUserId!);
+                return next;
+              });
+            }
+          }
+
+          if (msg.type === "sync-loop") {
+            setCustomLoop(msg.loopRange ?? null);
+            setIsLooping(!!msg.loopRange);
+            return;
+          }
+
+          if (msg.type === "toggle-global-control") {
+            setGlobalControlEnabled(!!msg.globalControl);
+            if (msg.globalControl) {
+              toast({ title: "Controle Livre", description: "Todos os participantes podem agora controlar o player e o roteiro." });
+            } else {
+              toast({ title: "Controle Restrito", description: "O controle global foi desativado." });
+            }
+            return;
+          }
+
+          if (msg.type === "revoke-all") {
+            setControlPermissions(new Set());
+            setGlobalControlEnabled(false);
+            toast({ title: "Permissoes Revogadas", description: "Todas as permissoes temporarias foram removidas." });
+            return;
+          }
+
           const video = videoRef.current;
           if (!video) return;
 
           isRemoteAction.current = true;
 
           if (msg.type === "video-seek" || msg.type === "video-play" || msg.type === "video-pause") {
-            video.currentTime = msg.currentTime;
+            if (typeof msg.currentTime === "number") video.currentTime = msg.currentTime;
           }
 
           if (msg.type === "video-play") {
@@ -800,54 +1087,62 @@ export default function RecordingRoom() {
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [sessionId]);
+  }, [sessionId, user?.id, user?.role, myStudioRole, toast]);
 
   useEffect(() => {
     localStorage.setItem("vhub_device_settings", JSON.stringify(deviceSettings));
   }, [deviceSettings]);
 
-  const prevCaptureModeRef = useRef(deviceSettings.voiceCaptureMode);
   useEffect(() => {
-    if (deviceSettings.voiceCaptureMode === prevCaptureModeRef.current) return;
-    const previousMode = prevCaptureModeRef.current;
-    prevCaptureModeRef.current = deviceSettings.voiceCaptureMode;
+    try {
+      localStorage.setItem(`vhub_control_perm_${sessionId}`, JSON.stringify(Array.from(controlPermissions)));
+    } catch {
+      // ignore storage errors
+    }
+  }, [controlPermissions, sessionId]);
+
+  const prevSettingsRef = useRef({ mode: deviceSettings.voiceCaptureMode, deviceId: deviceSettings.inputDeviceId });
+
+  useEffect(() => {
+    const { voiceCaptureMode, inputDeviceId } = deviceSettings;
+    const prev = prevSettingsRef.current;
+
+    if (voiceCaptureMode === prev.mode && inputDeviceId === prev.deviceId) return;
+
+    prevSettingsRef.current = { mode: voiceCaptureMode, deviceId: inputDeviceId };
+
     if (recordingStatus === "recording") return;
+
     (async () => {
       try {
-        const state = await requestMicrophone(deviceSettings.voiceCaptureMode);
+        const state = await requestMicrophone(voiceCaptureMode, inputDeviceId);
         setGain(state, deviceSettings.inputGain);
         setMicState(state);
         setMicReady(true);
-        toast({
-          title: "Modo de captura alterado",
-          description: deviceSettings.voiceCaptureMode === "studio"
-            ? "Studio Mode — filtros de voz ativados"
-            : "Original Microphone — captura crua",
-        });
-      } catch {
-        prevCaptureModeRef.current = previousMode;
-        try {
-          const fallback = await requestMicrophone(previousMode);
-          setGain(fallback, deviceSettings.inputGain);
-          setMicState(fallback);
-          setMicReady(true);
-          setDeviceSettings((prev) => ({ ...prev, voiceCaptureMode: previousMode }));
+        
+        if (voiceCaptureMode !== prev.mode) {
           toast({
-            title: "Erro ao trocar modo de captura",
-            description: "Microfone restaurado no modo anterior.",
-            variant: "destructive",
+            title: "Modo de captura alterado",
+            description: voiceCaptureMode === "studio"
+              ? "Studio Mode — filtros de voz ativados"
+              : voiceCaptureMode === "high-fidelity" 
+              ? "High-End Audio — Controle exclusivo" 
+              : "Original Microphone — captura crua",
           });
-        } catch {
-          toast({
-            title: "Erro critico no microfone",
-            description: "Nao foi possivel reinicializar o microfone. Recarregue a pagina.",
-            variant: "destructive",
-          });
-          setMicReady(false);
+        } else {
+           toast({ title: "Dispositivo de entrada alterado" });
         }
+      } catch (e) {
+        console.error("Mic switch error", e);
+        toast({
+          title: "Erro ao acessar dispositivo",
+          description: "Verifique se o microfone esta conectado e permitido.",
+          variant: "destructive",
+        });
+        setMicReady(false);
       }
     })();
-  }, [deviceSettings.voiceCaptureMode, recordingStatus, toast]);
+  }, [deviceSettings.voiceCaptureMode, deviceSettings.inputDeviceId, recordingStatus, deviceSettings.inputGain, toast]);
 
   
 
@@ -889,10 +1184,19 @@ export default function RecordingRoom() {
         setCurrentLine(idx);
       }
 
-      if (isLooping && idx !== -1) {
-        const line = scriptLines[idx];
-        const loopStart = Math.max(0, line.start - preRoll);
-        const loopEnd = (line.end ?? line.start) + postRoll;
+      if (isLooping) {
+        let loopStart = 0;
+        let loopEnd = videoDuration;
+
+        if (customLoop) {
+          loopStart = customLoop.start;
+          loopEnd = customLoop.end;
+        } else if (idx !== -1) {
+          const line = scriptLines[idx];
+          loopStart = Math.max(0, line.start - preRoll);
+          loopEnd = (line.end ?? line.start) + postRoll;
+        }
+
         if (t >= loopEnd) {
           video.currentTime = loopStart;
         }
@@ -935,7 +1239,7 @@ export default function RecordingRoom() {
   const emitVideoEvent = useCallback((event: string, data: any) => {
     if (isRemoteAction.current) return;
     const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (ws && ws.readyState === 1) { // WebSocket.OPEN is 1
       ws.send(JSON.stringify({ type: event, ...data }));
     }
   }, []);
@@ -980,11 +1284,39 @@ export default function RecordingRoom() {
   }, [emitVideoEvent]);
 
   const scrub = useCallback((fraction: number) => {
-    if (!videoRef.current || !videoDuration) return;
+    if (!videoRef.current || !videoDuration || !canControl) return;
     const t = fraction * videoDuration;
     videoRef.current.currentTime = t;
     emitVideoEvent("video-seek", { currentTime: t });
-  }, [videoDuration, emitVideoEvent]);
+  }, [videoDuration, emitVideoEvent, canControl]);
+
+  const handleLineClick = useCallback((idx: number) => {
+    if (!canControl) return;
+    const line = scriptLines[idx];
+    if (!line) return;
+
+    if (loopSelectionMode === "selecting-start") {
+      setCustomLoop({ start: line.start, end: line.end || line.start + 1 });
+      setLoopSelectionMode("selecting-end");
+      toast({ title: "Inicio do loop definido", description: "Clique agora na fala final do loop." });
+    } else if (loopSelectionMode === "selecting-end") {
+      if (customLoop) {
+        const newLoop = { ...customLoop, end: line.end || line.start + 1 };
+        setCustomLoop(newLoop);
+        setLoopSelectionMode("idle");
+        setIsLooping(true);
+        if (videoRef.current) videoRef.current.currentTime = newLoop.start;
+        emitVideoEvent("sync-loop", { loopRange: newLoop });
+        toast({ title: "Loop definido", description: "O trecho selecionado sera repetido." });
+      }
+    } else {
+      setCurrentLine(idx);
+      if (videoRef.current) {
+        videoRef.current.currentTime = line.start;
+        emitVideoEvent("video-seek", { currentTime: line.start, lineIndex: idx });
+      }
+    }
+  }, [scriptLines, emitVideoEvent, canControl, loopSelectionMode, customLoop, toast]);
 
   const cleanupPreview = useCallback(() => {
     if (previewUrl) {
@@ -1382,6 +1714,7 @@ export default function RecordingRoom() {
         onClose={() => setDeviceSettingsOpen(false)}
         settings={deviceSettings}
         onSettingsChange={setDeviceSettings}
+        micState={micState}
       />
 
       {showProfilePanel && session?.productionId && (
@@ -1394,6 +1727,86 @@ export default function RecordingRoom() {
           onClose={() => setShowProfilePanel(false)}
           existingProfile={recordingProfile}
         />
+      )}
+
+      {takesPopupOpen && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+          <div className="rounded-2xl w-[520px] overflow-hidden" style={{ background: "rgba(15,15,30,0.95)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.10)", boxShadow: "0 12px 48px rgba(0,0,0,0.5)" }}>
+            <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+              <span className="text-sm font-semibold" style={{ color: "hsl(210 40% 96%)" }}>Takes da Sessao</span>
+              <button
+                onClick={() => {
+                  setTakesPopupOpen(false);
+                  if (takePreviewAudioRef.current) {
+                    takePreviewAudioRef.current.pause();
+                    takePreviewAudioRef.current.currentTime = 0;
+                  }
+                  setTakePreviewId(null);
+                }}
+                className="transition-colors"
+                style={{ color: "rgba(255,255,255,0.40)" }}
+                data-testid="button-close-takes-popup"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-6 py-5">
+              <audio ref={takePreviewAudioRef} preload="none" />
+              <div className="flex flex-col gap-2 max-h-[420px] overflow-y-auto pr-1">
+                {(isPrivileged ? takesList : takesList.filter((t: any) => t.voiceActorId === user?.id || t.userId === user?.id)).map((take: any) => (
+                  <div key={take.id} className="flex items-center gap-3 px-3 py-2 rounded-lg" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <button
+                      onClick={() => {
+                        const audio = takePreviewAudioRef.current;
+                        if (!audio) return;
+                        if (takePreviewId === take.id) {
+                          audio.pause();
+                          audio.currentTime = 0;
+                          setTakePreviewId(null);
+                          return;
+                        }
+                        setTakePreviewId(take.id);
+                        audio.src = take.audioUrl;
+                        audio.play().catch(() => {});
+                      }}
+                      className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors"
+                      style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.75)" }}
+                      data-testid={`button-play-take-${take.id}`}
+                    >
+                      {takePreviewId === take.id ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono tabular-nums" style={{ color: "rgba(255,255,255,0.45)" }}>#{take.lineIndex}</span>
+                        <span className="text-xs font-medium truncate" style={{ color: "rgba(255,255,255,0.80)" }}>{take.characterName || "Take"}</span>
+                        <span className="ml-auto text-xs font-mono" style={{ color: "rgba(255,255,255,0.45)" }}>{take.durationSeconds ? `${Number(take.durationSeconds).toFixed(1)}s` : ""}</span>
+                      </div>
+                      {isPrivileged && (
+                        <div className="text-[10px] truncate mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>
+                          {take.voiceActorName || take.userName || take.userId || take.voiceActorId}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleDownloadTake(take)}
+                      className="p-2 rounded-lg transition-colors"
+                      style={{ color: "rgba(255,255,255,0.45)", background: "rgba(255,255,255,0.06)" }}
+                      title="Baixar take"
+                      data-testid={`button-download-take-popup-${take.id}`}
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                {takesList.length === 0 && (
+                  <div className="text-sm text-center py-10" style={{ color: "rgba(255,255,255,0.40)" }}>
+                    Nenhum take gravado nesta sessao
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       <header className="h-[52px] shrink-0 flex items-center justify-between px-5" style={{ background: "rgba(255,255,255,0.04)", backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
@@ -1421,7 +1834,92 @@ export default function RecordingRoom() {
           )}
         </div>
 
-        <div className="flex items-center gap-3 text-xs">
+        <div className="flex items-center gap-3 text-xs relative">
+          {isPrivileged && (
+            <>
+              <button
+                onClick={() => setControlMenuOpen((v) => !v)}
+                className="flex items-center gap-1.5 transition-colors"
+                style={{ color: controlMenuOpen ? "hsl(220 100% 70%)" : "rgba(255,255,255,0.45)" }}
+                data-testid="button-open-text-control"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                Texto
+              </button>
+              {controlMenuOpen && (
+                <div
+                  className="absolute right-0 top-[44px] z-50 w-[360px] rounded-xl overflow-hidden"
+                  style={{ background: "rgba(15,15,30,0.95)", border: "1px solid rgba(255,255,255,0.10)", boxShadow: "0 12px 48px rgba(0,0,0,0.5)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}
+                >
+                  <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                    <span className="text-xs font-semibold" style={{ color: "hsl(210 40% 96%)" }}>Controle do Texto</span>
+                    <button
+                      onClick={() => setControlMenuOpen(false)}
+                      className="transition-colors"
+                      style={{ color: "rgba(255,255,255,0.45)" }}
+                      data-testid="button-close-text-control"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="px-4 py-3">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-[10px] uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.40)" }}>Usuarios online</span>
+                      <button
+                        onClick={() => {
+                          emitVideoEvent("revoke-all", {});
+                          setControlPermissions(new Set());
+                          setGlobalControlEnabled(false);
+                        }}
+                        className="text-[9px] px-2 py-0.5 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors uppercase font-bold"
+                        data-testid="button-revoke-all-text-control"
+                      >
+                        Revogar todos
+                      </button>
+                    </div>
+                    <div className="flex flex-col gap-2 max-h-[280px] overflow-y-auto pr-1">
+                      {(presenceUsers.length ? presenceUsers : (session?.participants || []).map((p: any) => ({ userId: p.userId, name: p.user?.fullName || p.user?.displayName || "Usuario", role: p.role }))).map((p: any) => {
+                        const targetRole = String(p.role || "").toLowerCase();
+                        const targetIsPrivileged = new Set(["studio_admin", "diretor", "engenheiro_audio", "platform_owner", "owner", "director", "audio_engineer", "engineer", "admin"]).has(targetRole);
+                        const granted = controlPermissions.has(p.userId);
+                        return (
+                          <div key={p.userId} className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center text-[10px] font-bold shrink-0" style={{ color: "hsl(220 100% 65%)" }}>
+                                {String(p.name || "?")[0] || "?"}
+                              </div>
+                              <span className="truncate" style={{ color: "rgba(255,255,255,0.70)" }}>{p.name || "Usuario"}</span>
+                              <span className="text-[9px] px-1 rounded bg-white/5 uppercase shrink-0" style={{ color: "rgba(255,255,255,0.30)" }}>{p.role || ""}</span>
+                            </div>
+                            {p.userId !== user?.id && !targetIsPrivileged && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  emitVideoEvent(granted ? "revoke-permission" : "grant-permission", { targetUserId: p.userId });
+                                  setControlPermissions((prev) => {
+                                    const next = new Set(prev);
+                                    if (granted) next.delete(p.userId);
+                                    else next.add(p.userId);
+                                    return next;
+                                  });
+                                }}
+                                className="text-[10px] px-2 py-0.5 rounded transition-colors shrink-0"
+                                style={granted ? { background: "rgba(239,68,68,0.15)", color: "hsl(0 72% 65%)" } : { background: "rgba(59,130,246,0.15)", color: "hsl(220 100% 65%)" }}
+                                data-testid={`button-toggle-text-control-${p.userId}`}
+                              >
+                                {granted ? "Revogar" : "Conceder"}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="w-px h-4" style={{ background: "rgba(255,255,255,0.10)" }} />
+            </>
+          )}
           {!micReady && (
             <span className="flex items-center gap-1" style={{ color: "hsl(0 72% 65%)" }}>
               <MicOff className="w-3.5 h-3.5" /> Sem mic
@@ -1473,10 +1971,15 @@ export default function RecordingRoom() {
             </button>
           )}
           <div className="w-px h-4" style={{ background: "rgba(255,255,255,0.10)" }} />
-          <span style={{ color: "rgba(255,255,255,0.45)" }}>
+          <button
+            onClick={() => setTakesPopupOpen(true)}
+            className="transition-colors"
+            style={{ color: "rgba(255,255,255,0.45)" }}
+            data-testid="button-open-takes-popup"
+          >
             <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" style={{ color: "hsl(160 84% 60%)" }} />
             {takeCount} take{takeCount !== 1 ? "s" : ""}
-          </span>
+          </button>
           <div className="w-px h-4" style={{ background: "rgba(255,255,255,0.10)" }} />
           <button
             onClick={() => setDeviceSettingsOpen(true)}
@@ -1714,9 +2217,20 @@ export default function RecordingRoom() {
               </button>
 
               <button
-                onClick={() => setIsLooping((l) => !l)}
+                onClick={() => {
+                  if (loopSelectionMode === "idle") {
+                    setLoopSelectionMode("selecting-start");
+                    setIsLooping(true);
+                    toast({ title: "Modo de Selecao de Loop", description: "Clique na primeira fala para iniciar o loop." });
+                  } else {
+                    setLoopSelectionMode("idle");
+                    setCustomLoop(null);
+                    setIsLooping(false);
+                    emitVideoEvent("sync-loop", { loopRange: null });
+                  }
+                }}
                 className="w-9 h-9 rounded-xl flex items-center justify-center transition-all"
-                style={isLooping
+                style={isLooping || loopSelectionMode !== "idle"
                   ? { background: "rgba(59,130,246,0.12)", color: "hsl(220 100% 65%)", boxShadow: "0 0 0 1px rgba(59,130,246,0.30)" }
                   : { color: "rgba(255,255,255,0.45)", background: "rgba(255,255,255,0.05)" }
                 }
@@ -1805,25 +2319,24 @@ export default function RecordingRoom() {
             {scriptLines.map((line, i) => {
               const isActive = i === currentLine;
               const isDone = savedTakes.has(i);
+              const isInLoop = customLoop && line.start >= customLoop.start && (line.end || line.start) <= customLoop.end;
               const lineTakes = takesList.filter((t: any) => t.lineIndex === i);
               return (
                 <div
                   key={i}
                   ref={(el) => { lineRefs.current[i] = el; }}
-                  onClick={() => {
-                    setCurrentLine(i);
-                    if (videoRef.current) {
-                      videoRef.current.currentTime = line.start;
-                      emitVideoEvent("video-seek", { currentTime: line.start, lineIndex: i });
-                    }
-                  }}
-                  className="mb-3 px-5 py-4 lg:px-6 lg:py-5 rounded-xl cursor-pointer transition-all duration-300"
+                  onClick={() => handleLineClick(i)}
+                  className="mb-3 px-5 py-4 lg:px-6 lg:py-5 rounded-xl cursor-pointer transition-all duration-300 relative overflow-hidden"
                   style={{
-                    background: isActive ? "rgba(59, 130, 246, 0.08)" : "transparent",
+                    background: isActive ? "rgba(59, 130, 246, 0.08)" : (isInLoop ? "rgba(59, 130, 246, 0.04)" : "transparent"),
                     ...(isActive ? { boxShadow: "0 0 0 1px rgba(59,130,246,0.25), 0 0 12px rgba(59,130,246,0.08)" } : {}),
+                    ...(isInLoop && !isActive ? { boxShadow: "inset 0 0 0 1px rgba(59,130,246,0.15)" } : {}),
                   }}
                   data-testid={`script-line-${i}`}
                 >
+                  {isInLoop && (
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500/40" />
+                  )}
                   <div className="flex items-center gap-3 mb-2 lg:mb-3">
                     <span className="text-[16px] lg:text-[16px] font-mono tabular-nums" style={{ color: "rgba(255,255,255,0.40)" }}>
                       {formatTimecode(line.start)}
@@ -1834,6 +2347,21 @@ export default function RecordingRoom() {
                     >
                       {line.character}
                     </span>
+                    {canControl && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingLineIndex(i);
+                          setEditingLineText(lineEdits[i] ?? line.text);
+                        }}
+                        className="ml-1 p-1 rounded transition-colors"
+                        style={{ color: "rgba(255,255,255,0.40)" }}
+                        title="Editar fala"
+                        data-testid={`button-edit-line-${i}`}
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     {isDone && (
                       <span className="ml-auto flex items-center gap-1.5 text-[16px] font-medium" style={{ color: "hsl(160 84% 60%)" }}>
                         <CheckCircle2 className="w-5 h-5" /> Salvo
@@ -1845,12 +2373,46 @@ export default function RecordingRoom() {
                       </span>
                     )}
                   </div>
-                  <p className="text-[22px] lg:text-[30px] leading-[1.7] transition-colors" style={{
-                    color: isActive ? "hsl(210 40% 96%)" : "rgba(255,255,255,0.45)",
-                    fontWeight: isActive ? 500 : 400,
-                  }}>
-                    {line.text}
-                  </p>
+                  {editingLineIndex === i ? (
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <textarea
+                        value={editingLineText}
+                        onChange={(e) => setEditingLineText(e.target.value)}
+                        className="w-full rounded-lg p-3 text-[16px] lg:text-[18px] leading-relaxed bg-black/30 border border-white/10 focus:border-blue-500 outline-none"
+                        style={{ color: "hsl(210 40% 96%)" }}
+                        rows={3}
+                        data-testid={`textarea-edit-line-${i}`}
+                      />
+                      <div className="flex justify-end gap-2 mt-2">
+                        <button
+                          onClick={() => {
+                            setEditingLineIndex(null);
+                            setEditingLineText("");
+                          }}
+                          className="vhub-btn-xs vhub-btn-secondary"
+                          data-testid={`button-cancel-edit-line-${i}`}
+                          disabled={updateScriptLineMutation.isPending}
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={() => updateScriptLineMutation.mutate({ lineIndex: i, text: editingLineText })}
+                          className="vhub-btn-xs vhub-btn-primary"
+                          data-testid={`button-save-edit-line-${i}`}
+                          disabled={updateScriptLineMutation.isPending}
+                        >
+                          Salvar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[22px] lg:text-[30px] leading-[1.7] transition-colors" style={{
+                      color: isActive ? "hsl(210 40% 96%)" : "rgba(255,255,255,0.45)",
+                      fontWeight: isActive ? 500 : 400,
+                    }}>
+                      {lineEdits[i] ?? line.text}
+                    </p>
+                  )}
                   {lineTakes.length > 0 && (
                     <div className="mt-2 flex flex-col gap-1">
                       {lineTakes.map((take: any) => (

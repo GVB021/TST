@@ -1,7 +1,7 @@
 const SAMPLE_RATE = 48000;
 const FFT_SIZE = 2048;
 
-export type VoiceCaptureMode = "studio" | "original";
+export type VoiceCaptureMode = "studio" | "original" | "high-fidelity";
 
 export interface MicrophoneState {
   stream: MediaStream;
@@ -11,30 +11,58 @@ export interface MicrophoneState {
   analyserNode: AnalyserNode;
   captureMode: VoiceCaptureMode;
   filterNodes: AudioNode[];
+  workletNode?: AudioWorkletNode;
 }
 
 let currentState: MicrophoneState | null = null;
 
 export async function requestMicrophone(
-  mode: VoiceCaptureMode = "original"
+  mode: VoiceCaptureMode = "original",
+  deviceId?: string
 ): Promise<MicrophoneState> {
   if (currentState && currentState.audioContext.state !== "closed") {
-    if (currentState.captureMode === mode) {
+    // If asking for same mode AND same device (or no device specified and we have one), return current
+    const currentTrack = currentState.stream.getAudioTracks()[0];
+    const currentDeviceId = currentTrack.getSettings().deviceId;
+    
+    if (currentState.captureMode === mode && (!deviceId || currentDeviceId === deviceId)) {
       return currentState;
     }
   }
 
   const isStudio = mode === "studio";
+  const isHighFidelity = mode === "high-fidelity";
+  
   let stream: MediaStream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        sampleRate: SAMPLE_RATE,
-        channelCount: 1,
+    const constraints: MediaTrackConstraints = {
+      sampleRate: SAMPLE_RATE,
+      channelCount: 1,
+    };
+
+    if (deviceId) {
+      constraints.deviceId = { exact: deviceId };
+    }
+
+    if (isHighFidelity) {
+      // Strict constraints for lossless/raw capture
+      Object.assign(constraints, {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        highpassFilter: false,
+        sampleSize: 24, // Attempt 24-bit capture if supported
+      });
+    } else {
+      Object.assign(constraints, {
         echoCancellation: isStudio,
         noiseSuppression: isStudio,
         autoGainControl: isStudio,
-      },
+      });
+    }
+
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: constraints,
     });
   } catch (err) {
     console.error("[Mic] getUserMedia failed for mode", mode, err);
@@ -49,7 +77,20 @@ export async function requestMicrophone(
     await releaseMicrophoneAsync();
   }
 
-  const audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+  const audioContext = new AudioContext({ 
+    sampleRate: SAMPLE_RATE,
+    latencyHint: isHighFidelity ? "interactive" : "balanced"
+  });
+  
+  if (isHighFidelity) {
+    try {
+      await audioContext.audioWorklet.addModule("/audio-processor.js");
+      console.log("[Mic] AudioWorklet module loaded");
+    } catch (e) {
+      console.error("[Mic] Failed to load AudioWorklet", e);
+    }
+  }
+
   if (audioContext.state === "suspended") {
     await audioContext.resume();
     console.log("[Mic] AudioContext resumed from suspended state");
@@ -86,6 +127,10 @@ export async function requestMicrophone(
     highPassFilter.connect(compressor);
     compressor.connect(gainNode);
     console.log("[Mic] Studio mode: highpass(80Hz) → compressor → gain");
+  } else if (isHighFidelity) {
+    // Direct path for high fidelity
+    sourceNode.connect(gainNode);
+    console.log("[Mic] High-Fidelity mode: RAW capture (24-bit/48kHz requested)");
   } else {
     sourceNode.connect(gainNode);
     console.log("[Mic] Original mode: source → gain (no processing)");

@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { LucideIcon } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 // ─── Page Section ────────────────────────────────────────────────────────────
 interface PageSectionProps {
@@ -9,7 +9,7 @@ interface PageSectionProps {
 }
 export function PageSection({ children, className }: PageSectionProps) {
   return (
-    <div className={cn("space-y-8 page-enter", className)}>
+    <div className={cn("space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700", className)}>
       {children}
     </div>
   );
@@ -26,14 +26,14 @@ interface PageHeaderProps {
 export function PageHeader({ label, title, subtitle, action, className }: PageHeaderProps) {
   return (
     <div className={cn("flex flex-col sm:flex-row sm:items-start justify-between gap-4", className)}>
-      <div>
+      <div className="space-y-1">
         {label && (
-          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-primary mb-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-primary">
             {label}
           </p>
         )}
-        <h1 className="vhub-page-title">{title}</h1>
-        {subtitle && <p className="vhub-page-subtitle">{subtitle}</p>}
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">{title}</h1>
+        {subtitle && <p className="text-lg text-muted-foreground max-w-2xl">{subtitle}</p>}
       </div>
       {action && <div className="shrink-0 flex items-center gap-2">{action}</div>}
     </div>
@@ -51,16 +51,18 @@ interface StatCardProps {
 }
 export function StatCard({ label, value, icon, valueClassName, className, description }: StatCardProps) {
   return (
-    <div className={cn("vhub-card p-5", className)}>
-      <div className="flex items-start justify-between mb-3">
-        <span className="vhub-label">{label}</span>
-        <div className="shrink-0 w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center">{icon}</div>
+    <div className={cn("rounded-xl border bg-card text-card-foreground shadow-sm p-6 transition-all hover:shadow-md", className)}>
+      <div className="flex items-center justify-between space-y-0 pb-2">
+        <p className="text-sm font-medium text-muted-foreground">{label}</p>
+        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+          {icon}
+        </div>
       </div>
-      <div className={cn("text-2xl font-bold tracking-tight", valueClassName ?? "text-foreground")}>
+      <div className={cn("text-2xl font-bold tracking-tight", valueClassName)}>
         {value}
       </div>
       {description && (
-        <p className="text-[11px] text-muted-foreground mt-1">{description}</p>
+        <p className="text-xs text-muted-foreground mt-1">{description}</p>
       )}
     </div>
   );
@@ -76,13 +78,13 @@ interface EmptyStateProps {
 }
 export function EmptyState({ icon, title, description, action, className }: EmptyStateProps) {
   return (
-    <div className={cn("vhub-card flex flex-col items-center justify-center py-16 px-8 text-center", className)}>
-      <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center mb-4 text-muted-foreground/40">
+    <div className={cn("rounded-xl border border-dashed bg-muted/30 flex flex-col items-center justify-center py-16 px-8 text-center", className)}>
+      <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4 text-muted-foreground">
         {icon}
       </div>
-      <h3 className="font-semibold text-foreground mb-1">{title}</h3>
+      <h3 className="font-semibold text-foreground text-lg mb-1">{title}</h3>
       {description && (
-        <p className="text-sm text-muted-foreground max-w-xs mt-1">{description}</p>
+        <p className="text-sm text-muted-foreground max-w-sm mt-1">{description}</p>
       )}
       {action && <div className="mt-6">{action}</div>}
     </div>
@@ -97,178 +99,89 @@ interface SectionLabelProps {
 }
 export function SectionLabel({ children, className, as: Tag = "p" }: SectionLabelProps) {
   return (
-    <Tag className={cn("vhub-label", className)}>
+    <Tag className={cn("text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2", className)}>
       {children}
     </Tag>
   );
 }
 
-// ─── Status Badge ─────────────────────────────────────────────────────────────
-const STATUS_CLASS: Record<string, string> = {
-  active:    "status-active",
-  scheduled: "status-active",
-  planned:   "status-planned",
-  completed: "status-completed",
-  cancelled: "status-cancelled",
-  archived:  "status-planned",
-};
-interface StatusBadgeProps {
-  status: string;
-  className?: string;
-}
-export function StatusBadge({ status, className }: StatusBadgeProps) {
+// ─── Status Badge ────────────────────────────────────────────────────────────
+export function StatusBadge({ status, className }: { status: string; className?: string }) {
+  const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
+    active: { label: "Ativo", variant: "default" },
+    pending: { label: "Pendente", variant: "secondary" },
+    inactive: { label: "Inativo", variant: "outline" },
+    archived: { label: "Arquivado", variant: "outline" },
+    error: { label: "Erro", variant: "destructive" },
+  };
+
+  const config = statusMap[status] || { label: status, variant: "outline" };
+
   return (
-    <span className={cn(
-      "vhub-badge capitalize",
-      STATUS_CLASS[status.toLowerCase()] ?? "status-planned",
-      className
-    )}>
-      {status}
-    </span>
+    <Badge variant={config.variant} className={cn("capitalize", className)}>
+      {config.label}
+    </Badge>
   );
 }
 
-// ─── Role Badge ───────────────────────────────────────────────────────────────
-const ROLE_LABEL: Record<string, string> = {
-  voice_actor:      "Dublador",
-  dublador:         "Dublador",
-  director:         "Diretor",
-  diretor:          "Diretor",
-  engineer:         "Engenheiro de Audio",
-  engenheiro_audio: "Engenheiro de Audio",
-  platform_owner:   "Dono da Plataforma",
-  studio_admin:     "Admin Estudio",
-  aluno:            "Aluno",
-};
-const ROLE_CLASS: Record<string, string> = {
-  voice_actor:      "bg-violet-500/12 text-violet-400 border border-violet-500/25",
-  dublador:         "bg-violet-500/12 text-violet-400 border border-violet-500/25",
-  director:         "bg-blue-500/12 text-blue-400 border border-blue-500/25",
-  diretor:          "bg-blue-500/12 text-blue-400 border border-blue-500/25",
-  engineer:         "bg-amber-500/12 text-amber-400 border border-amber-500/25",
-  engenheiro_audio: "bg-amber-500/12 text-amber-400 border border-amber-500/25",
-  platform_owner:   "bg-rose-500/12 text-rose-400 border border-rose-500/25",
-  studio_admin:     "bg-primary/12 text-primary border border-primary/25",
-  aluno:            "bg-cyan-500/12 text-cyan-400 border border-cyan-500/25",
-};
-interface RoleBadgeProps {
-  role: string;
-  className?: string;
-}
-export function RoleBadge({ role, className }: RoleBadgeProps) {
+// ─── Role Badge ──────────────────────────────────────────────────────────────
+export function RoleBadge({ role, className }: { role: string; className?: string }) {
+  const roleMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
+    owner: { label: "Owner", variant: "default" },
+    platform_owner: { label: "Platform Owner", variant: "default" },
+    studio_admin: { label: "Admin", variant: "default" },
+    diretor: { label: "Diretor", variant: "secondary" },
+    engenheiro_audio: { label: "Eng. Áudio", variant: "outline" },
+    dublador: { label: "Dublador", variant: "outline" },
+    aluno: { label: "Aluno", variant: "outline" },
+  };
+
+  const config = roleMap[role] || { label: role, variant: "outline" };
+
   return (
-    <span className={cn(
-      "vhub-badge",
-      ROLE_CLASS[role] ?? "bg-muted text-muted-foreground border border-border/40",
-      className
-    )}>
-      {ROLE_LABEL[role] ?? role.replace(/_/g, " ")}
-    </span>
+    <Badge variant={config.variant} className={cn("uppercase text-[10px] tracking-wider font-medium px-2 py-0.5 rounded-full", className)}>
+      {config.label}
+    </Badge>
   );
 }
 
-// ─── Field Group ──────────────────────────────────────────────────────────────
+// ─── Field Group ─────────────────────────────────────────────────────────────
 interface FieldGroupProps {
   label: string;
   children: ReactNode;
   className?: string;
+  error?: string;
 }
-export function FieldGroup({ label, children, className }: FieldGroupProps) {
+export function FieldGroup({ label, children, className, error }: FieldGroupProps) {
   return (
-    <div className={cn("vhub-field", className)}>
-      <label className="vhub-field-label">{label}</label>
+    <div className={cn("space-y-2", className)}>
+      <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+        {label}
+      </label>
       {children}
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }
 
-// ─── Divider ─────────────────────────────────────────────────────────────────
-export function Divider({ className }: { className?: string }) {
-  return <div className={cn("h-px bg-border/50 my-1", className)} />;
+// ─── Grid Skeleton ───────────────────────────────────────────────────────────
+export function GridSkeleton({ count = 6, className }: { count?: number; className?: string }) {
+  return (
+    <div className={cn("grid gap-4 sm:grid-cols-2 lg:grid-cols-3", className)}>
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="rounded-xl border bg-card text-card-foreground shadow-sm h-[120px] animate-pulse bg-muted/50" />
+      ))}
+    </div>
+  );
 }
 
 // ─── Loading Rows ────────────────────────────────────────────────────────────
-export function LoadingRows({ count = 4 }: { count?: number }) {
+export function LoadingRows({ count = 5, className }: { count?: number; className?: string }) {
   return (
-    <div className="divide-y divide-border/40">
+    <div className={cn("space-y-2", className)}>
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="flex items-center gap-4 px-6 py-4">
-          <div className="w-8 h-8 rounded-full shimmer shrink-0" />
-          <div className="flex-1 space-y-2">
-            <div className="h-3 w-40 rounded shimmer" />
-            <div className="h-2 w-24 rounded shimmer" />
-          </div>
-        </div>
+        <div key={i} className="h-12 w-full rounded-md bg-muted/40 animate-pulse" />
       ))}
     </div>
-  );
-}
-
-// ─── Grid Skeleton ────────────────────────────────────────────────────────────
-export function GridSkeleton({ count = 6 }: { count?: number }) {
-  return (
-    <>
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="vhub-card h-40 shimmer" />
-      ))}
-    </>
-  );
-}
-
-// ─── Card Section (header + content) ─────────────────────────────────────────
-interface CardSectionProps {
-  title: string;
-  icon?: ReactNode;
-  action?: ReactNode;
-  children: ReactNode;
-  className?: string;
-}
-export function CardSection({ title, icon, action, children, className }: CardSectionProps) {
-  return (
-    <div className={cn("vhub-card overflow-hidden", className)}>
-      <div className="vhub-card-header">
-        <div className="flex items-center gap-2 text-sm font-medium text-foreground/80">
-          {icon}
-          {title}
-        </div>
-        {action && <div className="text-xs text-muted-foreground">{action}</div>}
-      </div>
-      <div className="vhub-card-body">{children}</div>
-    </div>
-  );
-}
-
-// ─── Icon Button ──────────────────────────────────────────────────────────────
-interface IconButtonProps {
-  icon: LucideIcon;
-  onClick?: () => void;
-  label?: string;
-  size?: number;
-  className?: string;
-  "data-testid"?: string;
-}
-export function IconButton({ icon: Icon, onClick, label, size = 14, className, ...rest }: IconButtonProps) {
-  return (
-    <button
-      onClick={onClick}
-      aria-label={label}
-      className={cn(
-        "h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground",
-        "hover:text-foreground hover:bg-muted/60 transition-colors press-effect",
-        className
-      )}
-      {...rest}
-    >
-      <Icon size={size} />
-    </button>
-  );
-}
-
-// ─── Inline Code ─────────────────────────────────────────────────────────────
-export function InlineCode({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <code className={cn("font-mono text-xs bg-muted/60 px-1.5 py-0.5 rounded", className)}>
-      {children}
-    </code>
   );
 }

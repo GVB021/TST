@@ -5,6 +5,7 @@ import type { Express, RequestHandler } from "express";
 import connectPg from "connect-pg-simple";
 import { scryptSync, randomBytes, timingSafeEqual } from "crypto";
 import { authStorage } from "./storage";
+import { pool } from "../../db";
 
 export function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");
@@ -27,7 +28,7 @@ export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000;
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
-    conString: process.env.DATABASE_URL,
+    pool: pool,
     createTableIfMissing: false,
     ttl: sessionTtl,
     tableName: "http_sessions",

@@ -15,6 +15,7 @@ import { useStudioRole } from "@/hooks/use-studio-role";
 import { useQuery } from "@tanstack/react-query";
 import { authFetch } from "@/lib/auth-fetch";
 import { pt } from "@/lib/i18n";
+import { RoleBadge } from "@/components/ui/design-system";
 
 interface AppSidebarProps {
   studioId: string;
@@ -24,7 +25,7 @@ export const AppSidebar = memo(function AppSidebar({ studioId }: AppSidebarProps
   const [location] = useLocation();
   const studio = useStudio(studioId);
   const { user, logout } = useAuth();
-  const { canManageMembers, canViewStaff, hasMinRole } = useStudioRole(studioId);
+  const { canManageMembers, canViewStaff, hasMinRole, role } = useStudioRole(studioId);
 
   const { data: unreadCount } = useQuery({
     queryKey: ["/api/notifications/unread-count"],
@@ -55,22 +56,22 @@ export const AppSidebar = memo(function AppSidebar({ studioId }: AppSidebarProps
     return items;
   }, [studioId, canManageMembers, canViewStaff, isStudioAdmin, isRestrictedRole]);
 
-  const activeItemClass = "bg-gradient-to-r from-primary/20 to-accent/10 text-primary font-medium border-l-2 border-l-primary";
-  const inactiveItemClass = "text-sidebar-foreground/70 border-l-2 border-l-transparent";
+  const activeItemClass = "bg-sidebar-accent text-sidebar-accent-foreground font-medium";
+  const inactiveItemClass = "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors";
 
   return (
-    <Sidebar className="vhub-sidebar">
-      <SidebarHeader className="py-5 px-4 border-b border-white/[0.08]">
+    <Sidebar className="border-r border-sidebar-border bg-sidebar">
+      <SidebarHeader className="py-4 px-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2.5">
           <img src="/logo.svg" alt="V.HUB" className="h-8 w-8" data-testid="img-logo-sidebar" />
-          <span className="font-bold tracking-tight gradient-text text-lg" data-testid="text-brand-name">V.HUB</span>
+          <span className="font-semibold tracking-tight text-lg text-sidebar-foreground" data-testid="text-brand-name">V.HUB</span>
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="px-2 pt-3">
+      <SidebarContent className="px-2 pt-4">
         <SidebarGroup>
-          <SidebarGroupLabel className="text-[10px] uppercase tracking-widest text-sidebar-foreground/40 px-2 mb-1">
-            {studio?.name || "Estudio"}
+          <SidebarGroupLabel className="text-xs font-medium text-sidebar-foreground/50 px-2 mb-2 uppercase tracking-wider">
+            {studio?.name || "Estúdio"}
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -82,12 +83,12 @@ export const AppSidebar = memo(function AppSidebar({ studioId }: AppSidebarProps
                       asChild
                       isActive={isActive}
                       tooltip={item.title}
-                      className={`h-8 rounded-md transition-all duration-150 ${
+                      className={`h-9 rounded-md transition-all duration-200 ${
                         isActive ? activeItemClass : inactiveItemClass
                       }`}
                     >
-                      <Link href={item.url} className="flex items-center gap-2.5 px-2">
-                        <item.icon className="h-3.5 w-3.5 shrink-0" />
+                      <Link href={item.url} className="flex items-center gap-3 px-3">
+                        <item.icon className="h-4 w-4 shrink-0" />
                         <span className="text-sm">{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
@@ -169,6 +170,14 @@ export const AppSidebar = memo(function AppSidebar({ studioId }: AppSidebarProps
       </SidebarContent>
 
       <SidebarFooter className="border-t border-white/[0.08] p-2">
+        {user && (
+          <div className="px-2 pb-2 mb-2 border-b border-sidebar-border">
+            <p className="text-sm font-medium truncate text-sidebar-foreground">
+              {user.displayName || user.fullName || user.email}
+            </p>
+            {role && <RoleBadge role={role} className="mt-1.5" />}
+          </div>
+        )}
         <SidebarMenu className="gap-0.5">
           <SidebarMenuItem>
             <SidebarMenuButton

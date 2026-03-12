@@ -217,6 +217,11 @@ function SessionGroup({
 }) {
   const [open, setOpen] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [tracksOpen, setTracksOpen] = useState(false);
+  const [tracksBusy, setTracksBusy] = useState(false);
+  const [tracksError, setTracksError] = useState<string | null>(null);
+  const [tracks, setTracks] = useState<Array<{ characterName: string; voiceActorName: string; outputUrl: string; filename: string }> | null>(null);
+
   const takeIds = takes.map(t => t.id);
   const allSelected = takeIds.every(id => selectedIds.has(id));
 
@@ -235,6 +240,57 @@ function SessionGroup({
     } catch {
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const loadTracks = async () => {
+    setTracksBusy(true);
+    setTracksError(null);
+    try {
+      const data = await authFetch(`/api/sessions/${sessionId}/tracks`) as any;
+      setTracks(Array.isArray(data?.tracks) ? data.tracks : []);
+    } catch (e: any) {
+      setTracksError(e?.message || "Falha ao carregar tracks");
+    } finally {
+      setTracksBusy(false);
+    }
+  };
+
+  const generateTracks = async () => {
+    setTracksBusy(true);
+    setTracksError(null);
+    try {
+      const data = await authFetch(`/api/sessions/${sessionId}/tracks/generate`, { method: "POST", body: JSON.stringify({}) }) as any;
+      setTracks(Array.isArray(data?.tracks) ? data.tracks : []);
+      setTracksOpen(true);
+    } catch (e: any) {
+      setTracksError(e?.message || "Falha ao gerar tracks");
+    } finally {
+      setTracksBusy(false);
+    }
+  };
+
+  const downloadTracksZip = async () => {
+    setTracksBusy(true);
+    setTracksError(null);
+    try {
+      let res = await fetch(`/api/sessions/${sessionId}/tracks/download-all`, { credentials: "include" });
+      if (res.status === 404) {
+        await authFetch(`/api/sessions/${sessionId}/tracks/generate`, { method: "POST", body: JSON.stringify({}) });
+        res = await fetch(`/api/sessions/${sessionId}/tracks/download-all`, { credentials: "include" });
+      }
+      if (!res.ok) throw new Error("Download falhou");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `tracks_${sessionTitle.replace(/[^a-zA-Z0-9_\-]/g, "_")}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setTracksError(e?.message || "Falha no download");
+    } finally {
+      setTracksBusy(false);
     }
   };
 
@@ -257,6 +313,32 @@ function SessionGroup({
           variant="ghost"
           size="sm"
           className="h-7 text-xs gap-1 shrink-0"
+          onClick={() => {
+            const next = !tracksOpen;
+            setTracksOpen(next);
+            if (next && tracks === null) loadTracks();
+          }}
+          disabled={tracksBusy}
+          data-testid={`button-toggle-tracks-${sessionId}`}
+        >
+          {tracksBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Music className="h-3 w-3" />}
+          Tracks
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs gap-1 shrink-0"
+          onClick={downloadTracksZip}
+          disabled={tracksBusy}
+          data-testid={`button-download-tracks-zip-${sessionId}`}
+        >
+          {tracksBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Package className="h-3 w-3" />}
+          Baixar Tracks
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs gap-1 shrink-0"
           onClick={handleDownloadAll}
           disabled={downloading}
           data-testid={`button-download-session-${sessionId}`}
@@ -267,6 +349,46 @@ function SessionGroup({
       </div>
       {open && (
         <div className="mt-1 ml-2 border-l border-white/[0.06]">
+          {tracksOpen && (
+            <div className="ml-4 mr-2 mt-2 mb-2 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-medium text-muted-foreground">Tracks consolidadas (para colagem final)</div>
+                <div className="flex gap-2">
+                  <Button variant="secondary" size="sm" className="h-7 text-xs" onClick={generateTracks} disabled={tracksBusy} data-testid={`button-generate-tracks-${sessionId}`}>
+                    Gerar/Regerar
+                  </Button>
+                </div>
+              </div>
+              {tracksError && (
+                <div className="text-xs mt-2 text-red-400">{tracksError}</div>
+              )}
+              {tracks && tracks.length > 0 ? (
+                <div className="mt-2 flex flex-col gap-1">
+                  {tracks.map((t) => (
+                    <div key={t.filename} className="flex items-center justify-between gap-2 text-xs">
+                      <div className="min-w-0">
+                        <div className="truncate">{t.characterName} — {t.voiceActorName}</div>
+                        <div className="truncate text-[10px] text-muted-foreground">{t.filename}</div>
+                      </div>
+                      <a
+                        href={t.outputUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs underline underline-offset-2 text-blue-400 shrink-0"
+                        data-testid={`link-download-track-${t.filename}`}
+                      >
+                        Download
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              ) : tracks ? (
+                <div className="text-xs mt-2 text-muted-foreground">Nenhuma track gerada ainda.</div>
+              ) : (
+                <div className="text-xs mt-2 text-muted-foreground">Clique em Tracks para carregar ou em Gerar/Regerar.</div>
+              )}
+            </div>
+          )}
           {takes.map(take => (
             <TakeRow
               key={take.id}
@@ -410,8 +532,8 @@ const Takes = memo(function Takes({ studioId }: { studioId: string }) {
   const { hasMinRole } = useStudioRole(studioId);
   const { toast } = useToast();
   const isPlatformOwner = user?.role === "platform_owner";
-  const isStudioAdmin = hasMinRole("studio_admin");
-  const hasAccess = isPlatformOwner || isStudioAdmin;
+  const canManageAudio = hasMinRole("engenheiro_audio");
+  const hasAccess = isPlatformOwner || canManageAudio;
 
   const { data: takesRaw, isLoading } = useQuery<TakeDetail[]>({
     queryKey: ["/api/studios", studioId, "takes", "grouped"],

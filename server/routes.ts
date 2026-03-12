@@ -20,6 +20,7 @@ import { logger } from "./lib/logger";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { audioProcessor } from "./services/audioProcessor";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -341,7 +342,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  app.patch("/api/studios/:studioId/productions/:id", requireAuth, requireStudioRole("studio_admin"), async (req, res) => {
+  app.patch("/api/studios/:studioId/productions/:id", requireAuth, requireStudioRole("studio_admin", "diretor", "engenheiro_audio"), async (req, res) => {
     try {
       const prod = await storage.getProduction(req.params.id);
       if (!prod) return res.status(404).json({ message: "Producao nao encontrada" });
@@ -350,6 +351,34 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.status(200).json(updated);
     } catch (err) {
       res.status(400).json({ message: "Dados invalidos" });
+    }
+  });
+
+  app.patch("/api/studios/:studioId/productions/:id/script", requireAuth, requireStudioAccess, async (req, res) => {
+    try {
+      const prod = await storage.getProduction(req.params.id);
+      if (!prod) return res.status(404).json({ message: "Producao nao encontrada" });
+      if (prod.studioId !== req.params.studioId) return res.status(403).json({ message: "Acesso negado" });
+
+      const user = (req as any).user!;
+      if (user.role !== "platform_owner") {
+        const roles = await storage.getUserRolesInStudio(user.id, req.params.studioId);
+        const ok = roles.includes("studio_admin") || roles.includes("diretor") || roles.includes("engenheiro_audio");
+        if (!ok) return res.status(403).json({ message: "Acesso negado" });
+      }
+
+      if (typeof req.body?.scriptJson !== "string") {
+        return res.status(400).json({ message: "scriptJson obrigatorio" });
+      }
+
+      const [updated] = await db
+        .update(productions)
+        .set({ scriptJson: req.body.scriptJson })
+        .where(eq(productions.id, req.params.id))
+        .returning();
+      res.status(200).json(updated);
+    } catch (err: any) {
+      res.status(400).json({ message: err?.message || "Dados invalidos" });
     }
   });
 
@@ -531,8 +560,21 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/sessions/:sessionId/takes", requireAuth, async (req, res) => {
     const session = await verifySessionAccess(req, res, req.params.sessionId);
     if (!session) return;
+    const user = (req as any).user!;
     const takesList = await storage.getTakes(req.params.sessionId);
-    res.status(200).json(takesList);
+
+    if (user.role === "platform_owner") {
+      return res.status(200).json(takesList);
+    }
+
+    const roles = await storage.getUserRolesInStudio(user.id, session.studioId);
+    const canSeeAll = roles.includes("studio_admin") || roles.includes("diretor") || roles.includes("engenheiro_audio");
+    if (canSeeAll) {
+      return res.status(200).json(takesList);
+    }
+
+    const mine = takesList.filter((t: any) => t.voiceActorId === user.id || t.userId === user.id);
+    return res.status(200).json(mine);
   });
 
   app.post("/api/takes/:id/prefer", requireAuth, async (req, res) => {
@@ -575,8 +617,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.status(200).json(allTakes);
       }
       const roles = await storage.getUserRolesInStudio(user.id, studioId);
-      if (!roles.includes("studio_admin")) {
-        return res.status(403).json({ message: "Acesso restrito a administradores" });
+      const canAccess = roles.includes("studio_admin") || roles.includes("diretor") || roles.includes("engenheiro_audio");
+      if (!canAccess) {
+        return res.status(403).json({ message: "Acesso restrito" });
       }
       const studioTakes = await storage.getStudioTakesGrouped(studioId);
       res.status(200).json(studioTakes);
@@ -594,7 +637,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const user = (req as any).user!;
       if (user.role !== "platform_owner") {
         const roles = await storage.getUserRolesInStudio(user.id, take.studioId);
-        if (!roles.includes("studio_admin")) {
+        const canAccess = roles.includes("studio_admin") || roles.includes("diretor") || roles.includes("engenheiro_audio");
+        if (!canAccess) {
           return res.status(403).json({ message: "Acesso negado" });
         }
       }
@@ -620,10 +664,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (takeList.length === 0) return res.status(404).json({ message: "Takes nao encontrados" });
       const user = (req as any).user!;
       if (user.role !== "platform_owner") {
-        const studioIds = [...new Set(takeList.map((t: any) => t.studioId))];
+        const studioIds = Array.from(new Set(takeList.map((t: any) => t.studioId)));
         for (const sid of studioIds) {
           const roles = await storage.getUserRolesInStudio(user.id, sid as string);
-          if (!roles.includes("studio_admin")) {
+          const canAccess = roles.includes("studio_admin") || roles.includes("diretor") || roles.includes("engenheiro_audio");
+          if (!canAccess) {
             return res.status(403).json({ message: "Acesso negado a takes de outro estudio" });
           }
         }
@@ -653,7 +698,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const user = (req as any).user!;
       if (user.role !== "platform_owner") {
         const roles = await storage.getUserRolesInStudio(user.id, takeList[0].studioId);
-        if (!roles.includes("studio_admin")) {
+        const canAccess = roles.includes("studio_admin") || roles.includes("diretor") || roles.includes("engenheiro_audio");
+        if (!canAccess) {
           return res.status(403).json({ message: "Acesso negado" });
         }
       }
@@ -683,7 +729,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const user = (req as any).user!;
       if (user.role !== "platform_owner") {
         const roles = await storage.getUserRolesInStudio(user.id, takeList[0].studioId);
-        if (!roles.includes("studio_admin")) {
+        const canAccess = roles.includes("studio_admin") || roles.includes("diretor") || roles.includes("engenheiro_audio");
+        if (!canAccess) {
           return res.status(403).json({ message: "Acesso negado" });
         }
       }
@@ -1126,6 +1173,283 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       logger.error("[Daily] Error", { message: err?.message });
       res.status(500).json({ message: "Erro ao criar sala de video" });
     }
+  });
+
+  // TIMELINE AUDIO PROCESSING
+  app.get("/api/timeline/files", requireAuth, async (req, res) => {
+    try {
+      const files = fs.readdirSync(uploadsDir).filter(f => f.toLowerCase().endsWith(".wav"));
+      const processed = files.map(f => {
+        const meta = audioProcessor.parseMetadata(f);
+        return {
+          filename: f,
+          url: `/uploads/${f}`,
+          ...meta
+        };
+      }).filter(f => f.character && f.timecode); // Filter only valid ones
+      
+      logger.info(`[Timeline] Found ${files.length} .wav files, ${processed.length} valid metadata.`);
+      
+      // Group by Character + Actor
+      const groups: Record<string, any[]> = {};
+      processed.forEach(item => {
+        const key = `${item.character}::${item.actor}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(item);
+      });
+
+      // Sort by timecode inside groups
+      Object.keys(groups).forEach(key => {
+        groups[key].sort((a, b) => (a.startTimeMs || 0) - (b.startTimeMs || 0));
+      });
+
+      res.json(groups);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/timeline/process-retake", requireAuth, async (req, res) => {
+    try {
+      const { originalFilename, retakeFilename } = req.body;
+      if (!originalFilename || !retakeFilename) return res.status(400).json({ message: "Missing filenames" });
+
+      const originalPath = path.join(uploadsDir, originalFilename);
+      const retakePath = path.join(uploadsDir, retakeFilename);
+
+      if (!fs.existsSync(originalPath) || !fs.existsSync(retakePath)) {
+        return res.status(404).json({ message: "Files not found" });
+      }
+
+      // Output filename: original_v2.wav (example)
+      const outputFilename = originalFilename.replace(".wav", `_merged_${Date.now()}.wav`);
+      const outputPath = path.join(uploadsDir, outputFilename);
+
+      // Get metadata for start time hint
+      const meta = audioProcessor.parseMetadata(originalFilename);
+      
+      const result = await audioProcessor.processRetake(
+        originalPath,
+        retakePath,
+        outputPath,
+        meta?.startTimeMs
+      );
+
+      if (result.status === "error") {
+        return res.status(500).json(result);
+      }
+
+      res.json({
+        ...result,
+        outputUrl: `/uploads/${outputFilename}`
+      });
+
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/timeline/bounce", requireAuth, async (req, res) => {
+    try {
+      const { files } = req.body; // Expects array of { filename, startTimeMs } or similar
+      if (!files || !Array.isArray(files) || files.length === 0) {
+        return res.status(400).json({ message: "No files provided" });
+      }
+
+      // Map to full paths
+      const processList = files.map((f: any) => {
+          const fullPath = path.join(uploadsDir, f.filename);
+          return {
+              path: fullPath,
+              startTimeMs: f.startTimeMs
+          };
+      }).filter((item: any) => fs.existsSync(item.path));
+
+      if (processList.length === 0) {
+          return res.status(404).json({ message: "Files not found" });
+      }
+
+      const outputFilename = `bounce_${Date.now()}.wav`;
+      const outputPath = path.join(uploadsDir, outputFilename);
+
+      const result = await audioProcessor.bounceTrack(processList, outputPath);
+
+      if (result.status === "error") {
+          return res.status(500).json(result);
+      }
+
+      res.json({
+          ...result,
+          outputUrl: `/uploads/${outputFilename}`
+      });
+
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  const TRACK_ROLES = new Set(["studio_admin", "diretor", "engenheiro_audio"]);
+  const tracksManifestPath = (sessionId: string) => path.join(uploadsDir, `tracks_${sessionId}.json`);
+
+  const sanitize = (input: string) =>
+    String(input || "")
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9_\-]+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 80);
+
+  const canManageTracks = (user: any, roles: string[]) =>
+    user?.role === "platform_owner" || (roles || []).some((r) => TRACK_ROLES.has(String(r || "").toLowerCase()));
+
+  const parseTc = (tc: any) => {
+    const raw = String(tc || "").trim();
+    if (/^\d{6}$/.test(raw)) return `${raw.slice(0, 2)}:${raw.slice(2, 4)}:${raw.slice(4, 6)}`;
+    if (/^\d{2}[-:]\d{2}[-:]\d{2}$/.test(raw)) return raw.replace(/-/g, ":");
+    return raw;
+  };
+
+  const getStartTimesMs = (scriptJson?: string | null) => {
+    if (!scriptJson) return [] as number[];
+    try {
+      const parsed = JSON.parse(scriptJson);
+      const rawLines: any[] = Array.isArray(parsed)
+        ? parsed
+        : parsed?.lines && Array.isArray(parsed.lines)
+        ? parsed.lines
+        : [];
+
+      const sorted = rawLines
+        .map((l: any) => ({
+          startMs: audioProcessor.timecodeToMs(parseTc(l.start || l.tempo || l.timecode || l.tc || "00:00:00")),
+        }))
+        .sort((a: any, b: any) => a.startMs - b.startMs);
+
+      return sorted.map((x: any) => x.startMs);
+    } catch {
+      return [] as number[];
+    }
+  };
+
+  app.get("/api/sessions/:sessionId/tracks", requireAuth, async (req, res) => {
+    const session = await verifySessionAccess(req, res, req.params.sessionId);
+    if (!session) return;
+
+    const user = (req as any).user!;
+    const roles = user.role === "platform_owner" ? ["platform_owner"] : await storage.getUserRolesInStudio(user.id, session.studioId);
+    if (!canManageTracks(user, roles)) return res.status(403).json({ message: "Acesso negado" });
+
+    const fp = tracksManifestPath(req.params.sessionId);
+    if (!fs.existsSync(fp)) return res.status(200).json({ sessionId: req.params.sessionId, tracks: [] });
+    try {
+      return res.status(200).json(JSON.parse(fs.readFileSync(fp, "utf-8")));
+    } catch {
+      return res.status(200).json({ sessionId: req.params.sessionId, tracks: [] });
+    }
+  });
+
+  app.post("/api/sessions/:sessionId/tracks/generate", requireAuth, async (req, res) => {
+    const session = await verifySessionAccess(req, res, req.params.sessionId);
+    if (!session) return;
+
+    const user = (req as any).user!;
+    const roles = user.role === "platform_owner" ? ["platform_owner"] : await storage.getUserRolesInStudio(user.id, session.studioId);
+    if (!canManageTracks(user, roles)) return res.status(403).json({ message: "Acesso negado" });
+
+    const production = await storage.getProduction(session.productionId);
+    const startTimesMs = getStartTimesMs(production?.scriptJson);
+    const takesList = await storage.getSessionTakesWithDetails(req.params.sessionId);
+
+    const best = new Map<string, any>();
+    for (const t of takesList) {
+      const key = `${t.characterId}::${t.voiceActorId}::${t.lineIndex}`;
+      const prev = best.get(key);
+      if (!prev) {
+        best.set(key, t);
+        continue;
+      }
+      const score = (x: any) =>
+        (x.isPreferred ? 1000 : 0) + (x.aiRecommended ? 100 : 0) + new Date(x.createdAt).getTime() / 1e12;
+      if (score(t) > score(prev)) best.set(key, t);
+    }
+
+    const groups = new Map<
+      string,
+      { characterName: string; voiceActorName: string; items: Array<{ path: string; startTimeMs: number }> }
+    >();
+    best.forEach((t) => {
+      const startTimeMs = startTimesMs[t.lineIndex] ?? 0;
+      const filePath = safeAudioPath(t.audioUrl);
+      if (!filePath || !fs.existsSync(filePath)) return;
+      const k = `${t.characterId}::${t.voiceActorId}`;
+      if (!groups.has(k)) {
+        groups.set(k, {
+          characterName: t.characterName || "Personagem",
+          voiceActorName: t.voiceActorName || "Dublador",
+          items: [],
+        });
+      }
+      groups.get(k)!.items.push({ path: filePath, startTimeMs });
+    });
+
+    const tracks: Array<{ characterName: string; voiceActorName: string; outputUrl: string; filename: string }> = [];
+    groups.forEach((g) => {
+      const items = g.items.sort((a: { startTimeMs: number }, b: { startTimeMs: number }) => a.startTimeMs - b.startTimeMs);
+      if (!items.length) return;
+      const outName = `track_${req.params.sessionId}_${sanitize(g.characterName)}_${sanitize(g.voiceActorName)}_${Date.now()}.wav`;
+      const outPath = path.join(uploadsDir, outName);
+      tracks.push({ characterName: g.characterName, voiceActorName: g.voiceActorName, filename: outName, outputUrl: "", _outPath: outPath, _items: items } as any);
+    });
+
+    for (const t of tracks as any[]) {
+      const result = await audioProcessor.bounceTrack(t._items, t._outPath);
+      if (result.status !== "success") continue;
+      t.outputUrl = `/uploads/${t.filename}`;
+      delete t._items;
+      delete t._outPath;
+    }
+
+    const finalized = (tracks as any[]).filter((t) => typeof t.outputUrl === "string" && t.outputUrl.length > 0);
+
+    const manifest = { sessionId: req.params.sessionId, generatedAt: new Date().toISOString(), tracks: finalized };
+    fs.writeFileSync(tracksManifestPath(req.params.sessionId), JSON.stringify(manifest, null, 2));
+    return res.status(200).json(manifest);
+  });
+
+  app.get("/api/sessions/:sessionId/tracks/download-all", requireAuth, async (req, res) => {
+    const session = await verifySessionAccess(req, res, req.params.sessionId);
+    if (!session) return;
+
+    const user = (req as any).user!;
+    const roles = user.role === "platform_owner" ? ["platform_owner"] : await storage.getUserRolesInStudio(user.id, session.studioId);
+    if (!canManageTracks(user, roles)) return res.status(403).json({ message: "Acesso negado" });
+
+    const fp = tracksManifestPath(req.params.sessionId);
+    if (!fs.existsSync(fp)) return res.status(404).json({ message: "Nenhuma track gerada" });
+
+    let trackFiles: Array<{ filename: string }> = [];
+    try {
+      const data = JSON.parse(fs.readFileSync(fp, "utf-8"));
+      trackFiles = Array.isArray(data?.tracks) ? data.tracks : [];
+    } catch {
+      trackFiles = [];
+    }
+
+    if (!trackFiles.length) return res.status(404).json({ message: "Nenhuma track gerada" });
+
+    const archiver = (await import("archiver")).default;
+    const archive = archiver("zip", { zlib: { level: 5 } });
+    res.setHeader("Content-Disposition", `attachment; filename="tracks_${req.params.sessionId}.zip"`);
+    res.setHeader("Content-Type", "application/zip");
+    archive.pipe(res);
+
+    for (const t of trackFiles) {
+      const filePath = path.join(uploadsDir, t.filename);
+      if (!fs.existsSync(filePath)) continue;
+      archive.file(filePath, { name: t.filename });
+    }
+    await archive.finalize();
   });
 
   return httpServer;

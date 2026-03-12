@@ -1,9 +1,11 @@
 node_modules
 dist
 .DS_Store
-.env
 server/public
 vite.config.ts.*
 *.tar.gz
 .git_backup
 .local
+.env
+public/uploads
+VERSAL ATUAL DO HUBDUB
