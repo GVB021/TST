@@ -34,7 +34,7 @@ export function getSession() {
     tableName: "http_sessions",
   });
   return session({
-    secret: process.env.SESSION_SECRET!,
+    secret: process.env.SESSION_SECRET || "default_dev_secret_change_in_prod",
     store: sessionStore,
     resave: false,
     saveUninitialized: false,

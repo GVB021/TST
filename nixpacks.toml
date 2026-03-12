@@ -1,0 +1,23 @@
+[phases.setup]
+nixPkgs = [
+  "nodejs_20",
+  "python3",
+  "python3Packages.pip",
+  "ffmpeg",
+  "libsndfile"
+]
+
+[phases.install]
+cmds = [
+  "npm ci",
+  "python3 -m pip install --upgrade pip",
+  "python3 -m pip install --no-cache-dir -r server/requirements.txt"
+]
+
+[phases.build]
+cmds = [
+  "npm run build"
+]
+
+[start]
+cmd = "npm run start"
