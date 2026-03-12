@@ -1,8 +1,7 @@
 [phases.setup]
 nixPkgs = [
   "nodejs_20",
-  "python3",
-  "python3Packages.pip",
+  "python311",
   "ffmpeg",
   "libsndfile"
 ]
@@ -10,8 +9,8 @@ nixPkgs = [
 [phases.install]
 cmds = [
   "npm ci",
-  "python3 -m pip install --upgrade pip",
-  "python3 -m pip install --no-cache-dir -r server/requirements.txt"
+  "python3 -m venv .venv",
+  ". .venv/bin/activate && pip install --no-cache-dir -r server/requirements.txt"
 ]
 
 [phases.build]
@@ -20,4 +19,4 @@ cmds = [
 ]
 
 [start]
-cmd = "npm run start"
+cmd = ". .venv/bin/activate && npm run db:push && npm run start"
