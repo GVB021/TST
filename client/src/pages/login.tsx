@@ -56,8 +56,19 @@ export default function Login() {
           toast({ title: "Erro ao entrar", description: err.message, variant: "destructive" });
         }
       },
-      onSuccess: () => {
-        setLocation("/studios");
+      onSuccess: async () => {
+        try {
+          const res = await fetch("/api/studios");
+          if (!res.ok) throw new Error("Falha ao buscar estúdios");
+          const studios = await res.json();
+          if (Array.isArray(studios) && studios.length === 1) {
+            setLocation(`/studios/${studios[0].id}`);
+          } else {
+            setLocation("/studios");
+          }
+        } catch {
+          setLocation("/studios");
+        }
       }
     });
   };

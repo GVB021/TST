@@ -109,42 +109,6 @@ export class AudioProcessor {
       });
     });
   }
-
-  async bounceTrack(files: Array<{ path: string, startTimeMs: number }>, outputPath: string): Promise<ProcessingResult> {
-    const tempJsonPath = path.join(process.cwd(), "public", "uploads", `temp_bounce_${Date.now()}.json`);
-    
-    fs.writeFileSync(tempJsonPath, JSON.stringify(files));
-
-    return new Promise((resolve, reject) => {
-        const pythonCmd = process.platform === "win32" ? "python" : "python3";
-        const args = [
-            this.bounceScriptPath,
-            `"${tempJsonPath}"`,
-            `"${outputPath}"`
-        ];
-
-        exec(`${pythonCmd} ${args.join(" ")}`, (error, stdout, stderr) => {
-            // Limpar arquivo temporário
-            if (fs.existsSync(tempJsonPath)) fs.unlinkSync(tempJsonPath);
-
-            if (error) {
-                console.error(`[AudioProcessor] Bounce Error: ${error.message}`);
-                resolve({ status: "error", message: "Falha ao gerar bounce." });
-                return;
-            }
-
-            try {
-                const lines = stdout.trim().split("\n");
-                const lastLine = lines[lines.length - 1];
-                const result = JSON.parse(lastLine) as ProcessingResult;
-                resolve(result);
-            } catch (e) {
-                console.error(`[AudioProcessor] Bounce JSON Error: ${stdout}`);
-                resolve({ status: "error", message: "Saída inválida do bounce." });
-            }
-        });
-    });
-  }
 }
 
 export const audioProcessor = new AudioProcessor();
