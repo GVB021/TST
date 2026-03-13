@@ -3,10 +3,11 @@ import { useAuth } from "@/hooks/use-auth";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, ArrowRight, ArrowLeft, UserPlus } from "lucide-react";
+import { Loader2, ArrowRight, ArrowLeft, UserPlus, CheckCircle2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { pt } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 export default function Login() {
   const [mode, setMode] = useState<"login" | "register" | "pending">("login");
@@ -62,7 +63,7 @@ export default function Login() {
           if (!res.ok) throw new Error("Falha ao buscar estúdios");
           const studios = await res.json();
           if (Array.isArray(studios) && studios.length === 1) {
-            setLocation(`/studios/${studios[0].id}`);
+            setLocation(`/studio/${studios[0].id}`);
           } else {
             setLocation("/studios");
           }
@@ -95,28 +96,52 @@ export default function Login() {
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
+  // Cinematic Background Component
+  const CinematicBackground = () => (
+    <div className="fixed inset-0 z-0 pointer-events-none">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary/10 via-background to-background"></div>
+      <div className="absolute inset-0 bg-[url('/grid-pattern.svg')] bg-repeat opacity-[0.03]"></div>
+      <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-primary/5 to-transparent opacity-30"></div>
+    </div>
+  );
+
   if (mode === "pending") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4 relative overflow-hidden">
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[500px] bg-primary/5 blur-[120px] rounded-full" />
-        </div>
-        <div className="w-full max-w-sm relative page-enter text-center">
-          <div className="mx-auto w-12 h-12 flex items-center justify-center mb-6">
-            <img src="/logo.svg" alt="V.HUB" className="w-12 h-12" data-testid="img-logo-pending" />
+        <CinematicBackground />
+        <div className="w-full max-w-md bg-black/40 backdrop-blur-2xl border border-white/10 rounded-2xl p-8 shadow-2xl relative z-10 animate-in fade-in zoom-in-95 duration-500">
+          <div className="flex flex-col items-center text-center space-y-6">
+            <div className="relative">
+              <div className="absolute inset-0 bg-primary/50 blur-xl opacity-50 rounded-full animate-pulse"></div>
+              <img src="/logo.svg" alt="V.HUB" className="h-16 w-16 relative z-10 drop-shadow-[0_0_15px_rgba(59,130,246,0.6)]" />
+            </div>
+            
+            <div className="space-y-2">
+              <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">
+                {pt.auth.pendingTitle}
+              </h1>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                {pt.auth.pendingDescription}
+              </p>
+            </div>
+
+            <div className="w-full p-4 bg-primary/10 border border-primary/20 rounded-xl flex items-center gap-3 text-left">
+              <div className="bg-primary/20 p-2 rounded-lg">
+                <Loader2 className="h-5 w-5 text-primary animate-spin" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-white">Aguardando Aprovação</p>
+                <p className="text-xs text-primary/80">Você será notificado por email.</p>
+              </div>
+            </div>
+
+            <button 
+              onClick={() => setMode("login")}
+              className="text-xs text-muted-foreground hover:text-white transition-colors flex items-center gap-1"
+            >
+              <ArrowLeft className="w-3 h-3" /> Voltar para o login
+            </button>
           </div>
-          <h1 className="vhub-page-title text-foreground mb-2" data-testid="text-pending-title">{pt.status.pending}</h1>
-          <p className="vhub-body text-muted-foreground mb-8" data-testid="text-pending-message">
-            {pt.auth.pendingMessage}
-          </p>
-          <button
-            onClick={() => setMode("login")}
-            className="vhub-btn-ghost vhub-btn-sm gap-1.5"
-            data-testid="button-back-login"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            {pt.register.backToLogin}
-          </button>
         </div>
       </div>
     );
@@ -124,127 +149,72 @@ export default function Login() {
 
   if (mode === "register") {
     return (
-      <div className="min-h-screen bg-background p-4 relative overflow-hidden">
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[500px] bg-primary/5 blur-[120px] rounded-full" />
-        </div>
-        <div className="w-full max-w-2xl mx-auto relative page-enter py-8">
+      <div className="min-h-screen bg-background p-4 relative overflow-hidden flex flex-col items-center">
+        <CinematicBackground />
+        
+        <div className="w-full max-w-4xl relative z-10 my-auto animate-in fade-in slide-in-from-bottom-8 duration-700">
           <div className="text-center mb-8">
-            <div className="mx-auto w-14 h-14 flex items-center justify-center mb-6">
-              <img src="/logo.svg" alt="V.HUB" className="w-14 h-14" data-testid="img-logo-register" />
-            </div>
-            <h1 className="vhub-page-title text-foreground mb-2" data-testid="text-register-title">{pt.register.title}</h1>
-            <p className="vhub-page-subtitle !mt-0">{pt.register.subtitle}</p>
+            <img src="/logo.svg" alt="V.HUB" className="h-12 w-12 mx-auto mb-4 drop-shadow-[0_0_15px_rgba(59,130,246,0.5)]" />
+            <h1 className="text-3xl font-bold text-white mb-2">{pt.auth.registerTitle}</h1>
+            <p className="text-muted-foreground">{pt.auth.registerSubtitle}</p>
           </div>
 
-          <form onSubmit={handleRegister} className="space-y-6">
-            <div className="vhub-card-glass rounded-2xl p-6 space-y-4">
-              <h3 className="font-semibold text-sm text-foreground">Dados pessoais</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="vhub-field">
-                  <label className="vhub-field-label">{pt.register.fullName} *</label>
-                  <Input value={form.fullName} onChange={e => updateForm("fullName", e.target.value)} className="h-11 bg-card border-border/60" required data-testid="input-fullName" />
+          <form onSubmit={handleRegister} className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-2xl p-8 shadow-2xl space-y-8">
+            {/* Form Sections */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-white/80 uppercase tracking-wider border-b border-white/10 pb-2">Dados Pessoais</h3>
+                <div className="space-y-4">
+                  <Input placeholder={pt.auth.fullName} value={form.fullName} onChange={e => updateForm("fullName", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50" />
+                  <Input placeholder={pt.auth.artistName} value={form.artistName} onChange={e => updateForm("artistName", e.target.value)} className="bg-white/5 border-white/10 focus:border-primary/50" />
+                  <Input type="email" placeholder={pt.auth.emailPlaceholder} value={form.email} onChange={e => updateForm("email", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50" />
+                  <Input type="password" placeholder={pt.auth.passwordPlaceholder} value={form.password} onChange={e => updateForm("password", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50" />
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input placeholder={pt.auth.phone} value={form.phone} onChange={e => updateForm("phone", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50" />
+                    <Input placeholder={pt.auth.altPhone} value={form.altPhone} onChange={e => updateForm("altPhone", e.target.value)} className="bg-white/5 border-white/10 focus:border-primary/50" />
+                  </div>
+                  <Input type="date" placeholder={pt.auth.birthDate} value={form.birthDate} onChange={e => updateForm("birthDate", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50" />
                 </div>
-                <div className="vhub-field">
-                  <label className="vhub-field-label">{pt.register.artistName}</label>
-                  <Input value={form.artistName} onChange={e => updateForm("artistName", e.target.value)} className="h-11 bg-card border-border/60" data-testid="input-artistName" />
-                </div>
-                <div className="vhub-field">
-                  <label className="vhub-field-label">{pt.auth.email} *</label>
-                  <Input type="email" value={form.email} onChange={e => updateForm("email", e.target.value)} className="h-11 bg-card border-border/60" required data-testid="input-reg-email" />
-                </div>
-                <div className="vhub-field">
-                  <label className="vhub-field-label">{pt.auth.password} *</label>
-                  <Input type="password" value={form.password} onChange={e => updateForm("password", e.target.value)} className="h-11 bg-card border-border/60" required data-testid="input-reg-password" />
-                </div>
-                <div className="vhub-field md:col-span-2">
-                  <label className="vhub-field-label">{pt.register.studio} *</label>
-                  <Select value={form.studioId} onValueChange={(value) => updateForm("studioId", value)}>
-                    <SelectTrigger className="h-11 bg-card border-border/60" data-testid="select-studio">
-                      <SelectValue placeholder={pt.register.studioPlaceholder} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {studiosLoading ? (
-                        <SelectItem value="__loading" disabled>{pt.common.loading}</SelectItem>
-                      ) : publicStudios.length === 0 ? (
-                        <SelectItem value="__empty" disabled>{pt.register.noStudiosAvailable}</SelectItem>
-                      ) : (
-                        publicStudios.map((s) => (
-                          <SelectItem key={s.id} value={s.id} data-testid={`select-studio-option-${s.id}`}>
-                            {s.name}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="vhub-field">
-                  <label className="vhub-field-label">{pt.register.phone} *</label>
-                  <Input value={form.phone} onChange={e => updateForm("phone", e.target.value)} className="h-11 bg-card border-border/60" required data-testid="input-phone" />
-                </div>
-                <div className="vhub-field">
-                  <label className="vhub-field-label">{pt.register.altPhone}</label>
-                  <Input value={form.altPhone} onChange={e => updateForm("altPhone", e.target.value)} className="h-11 bg-card border-border/60" data-testid="input-altPhone" />
-                </div>
-                <div className="vhub-field">
-                  <label className="vhub-field-label">{pt.register.birthDate} *</label>
-                  <Input type="date" value={form.birthDate} onChange={e => updateForm("birthDate", e.target.value)} className="h-11 bg-card border-border/60" required data-testid="input-birthDate" />
-                </div>
-                <div className="vhub-field">
-                  <label className="vhub-field-label">{pt.register.specialty} *</label>
-                  <Input value={form.specialty} onChange={e => updateForm("specialty", e.target.value)} placeholder={pt.register.specialtyPlaceholder} className="h-11 bg-card border-border/60" required data-testid="input-specialty" />
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-white/80 uppercase tracking-wider border-b border-white/10 pb-2">Localização e Perfil</h3>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-4">
+                     <Input placeholder={pt.auth.city} value={form.city} onChange={e => updateForm("city", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50" />
+                     <Input placeholder={pt.auth.state} value={form.state} onChange={e => updateForm("state", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50" />
+                     <Input placeholder={pt.auth.country} value={form.country} onChange={e => updateForm("country", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50" />
+                  </div>
+                  <Input placeholder={pt.auth.mainLanguage} value={form.mainLanguage} onChange={e => updateForm("mainLanguage", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50" />
+                  <Input placeholder={pt.auth.additionalLanguages} value={form.additionalLanguages} onChange={e => updateForm("additionalLanguages", e.target.value)} className="bg-white/5 border-white/10 focus:border-primary/50" />
+                  <Input placeholder={pt.auth.experience} value={form.experience} onChange={e => updateForm("experience", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50" />
+                  <Input placeholder={pt.auth.specialty} value={form.specialty} onChange={e => updateForm("specialty", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50" />
+                  <Textarea placeholder={pt.auth.bio} value={form.bio} onChange={e => updateForm("bio", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50 min-h-[80px]" />
+                  <Input placeholder={pt.auth.portfolioUrl} value={form.portfolioUrl} onChange={e => updateForm("portfolioUrl", e.target.value)} className="bg-white/5 border-white/10 focus:border-primary/50" />
+                  
+                  {studiosLoading ? (
+                    <div className="flex justify-center p-2"><Loader2 className="animate-spin text-primary" /></div>
+                  ) : (
+                    <Select value={form.studioId} onValueChange={v => updateForm("studioId", v)}>
+                      <SelectTrigger className="bg-white/5 border-white/10 focus:border-primary/50">
+                        <SelectValue placeholder={pt.auth.selectStudio} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {publicStudios.map(s => (
+                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="vhub-card-glass rounded-2xl p-6 space-y-4">
-              <h3 className="font-semibold text-sm text-foreground">Localizacao e idiomas</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="vhub-field">
-                  <label className="vhub-field-label">{pt.register.city} *</label>
-                  <Input value={form.city} onChange={e => updateForm("city", e.target.value)} className="h-11 bg-card border-border/60" required data-testid="input-city" />
-                </div>
-                <div className="vhub-field">
-                  <label className="vhub-field-label">{pt.register.state} *</label>
-                  <Input value={form.state} onChange={e => updateForm("state", e.target.value)} className="h-11 bg-card border-border/60" required data-testid="input-state" />
-                </div>
-                <div className="vhub-field">
-                  <label className="vhub-field-label">{pt.register.country} *</label>
-                  <Input value={form.country} onChange={e => updateForm("country", e.target.value)} className="h-11 bg-card border-border/60" required data-testid="input-country" />
-                </div>
-                <div className="vhub-field">
-                  <label className="vhub-field-label">{pt.register.mainLanguage} *</label>
-                  <Input value={form.mainLanguage} onChange={e => updateForm("mainLanguage", e.target.value)} className="h-11 bg-card border-border/60" required data-testid="input-mainLanguage" />
-                </div>
-                <div className="vhub-field md:col-span-2">
-                  <label className="vhub-field-label">{pt.register.additionalLanguages}</label>
-                  <Input value={form.additionalLanguages} onChange={e => updateForm("additionalLanguages", e.target.value)} className="h-11 bg-card border-border/60" data-testid="input-additionalLanguages" />
-                </div>
-              </div>
-            </div>
-
-            <div className="vhub-card-glass rounded-2xl p-6 space-y-4">
-              <h3 className="font-semibold text-sm text-foreground">Perfil profissional</h3>
-              <div className="vhub-field">
-                <label className="vhub-field-label">{pt.register.experience} *</label>
-                <Textarea value={form.experience} onChange={e => updateForm("experience", e.target.value)} className="bg-card border-border/60 min-h-[80px]" required data-testid="input-experience" />
-              </div>
-              <div className="vhub-field">
-                <label className="vhub-field-label">{pt.register.bio} *</label>
-                <Textarea value={form.bio} onChange={e => updateForm("bio", e.target.value)} className="bg-card border-border/60 min-h-[80px]" required data-testid="input-bio" />
-              </div>
-              <div className="vhub-field">
-                <label className="vhub-field-label">{pt.register.portfolioUrl}</label>
-                <Input value={form.portfolioUrl} onChange={e => updateForm("portfolioUrl", e.target.value)} placeholder="https://" className="h-11 bg-card border-border/60" data-testid="input-portfolioUrl" />
-              </div>
-            </div>
-
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-white/10">
               <button
                 type="button"
                 onClick={() => setMode("login")}
-                className="vhub-btn-ghost vhub-btn-md gap-1.5"
-                data-testid="button-back-to-login"
+                className="px-6 py-3 rounded-lg border border-white/10 hover:bg-white/5 text-muted-foreground transition-colors flex items-center justify-center gap-2"
               >
                 <ArrowLeft className="w-4 h-4" />
                 {pt.register.backToLogin}
@@ -252,105 +222,125 @@ export default function Login() {
               <button
                 type="submit"
                 disabled={isRegistering}
-                className="vhub-btn-md vhub-btn-primary flex-1"
-                data-testid="button-register"
+                className="flex-1 px-6 py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-lg transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
               >
-                {isRegistering ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <>
-                    {pt.register.submit}
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
+                {isRegistering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {pt.register.submit} <UserPlus className="w-4 h-4" />
               </button>
             </div>
           </form>
-
-          <p className="mt-8 text-center vhub-caption opacity-50">
-            {pt.common.platform}
-          </p>
         </div>
       </div>
     );
   }
 
+  // Login Mode - Split Layout
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4 relative overflow-hidden">
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[500px] bg-primary/5 blur-[120px] rounded-full" />
-        <div className="absolute top-0 right-1/4 w-[300px] h-[300px] bg-primary/3 blur-[100px] rounded-full" />
+    <div className="min-h-screen flex bg-background relative overflow-hidden">
+      <CinematicBackground />
+
+      {/* Left Panel - Branding */}
+      <div className="hidden lg:flex w-1/2 relative z-10 flex-col justify-between p-12 border-r border-white/5 bg-black/20 backdrop-blur-sm">
+        <div className="flex items-center gap-3">
+          <img src="/logo.svg" alt="V.HUB" className="h-10 w-10 drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]" />
+          <span className="text-2xl font-bold tracking-tight text-white">V.HUB</span>
+        </div>
+        
+        <div className="space-y-6 max-w-lg">
+          <h1 className="text-5xl font-bold leading-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-white/90 to-white/50">
+            O Estúdio de Dublagem do Futuro.
+          </h1>
+          <p className="text-lg text-muted-foreground leading-relaxed">
+            Gerencie produções, sessões e talentos em uma plataforma unificada, moderna e intuitiva.
+          </p>
+          <div className="flex gap-4">
+             <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10">
+               <CheckCircle2 className="w-4 h-4 text-primary" />
+               <span className="text-sm text-white/80">Gestão de Elenco</span>
+             </div>
+             <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10">
+               <CheckCircle2 className="w-4 h-4 text-primary" />
+               <span className="text-sm text-white/80">Escalas Inteligentes</span>
+             </div>
+          </div>
+        </div>
+
+        <div className="text-sm text-muted-foreground/40">
+          © {new Date().getFullYear()} V.HUB Studio. All rights reserved.
+        </div>
       </div>
 
-      <div className="w-full max-w-sm relative page-enter">
-        <div className="text-center mb-10">
-          <div className="mx-auto w-14 h-14 flex items-center justify-center mb-6">
-            <img src="/logo.svg" alt="V.HUB" className="w-14 h-14" data-testid="img-logo-login" />
+      {/* Right Panel - Form */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-8 relative z-10">
+        <div className="w-full max-w-md space-y-8 animate-in fade-in slide-in-from-right-8 duration-700">
+          {/* Mobile Logo */}
+          <div className="lg:hidden flex justify-center mb-8">
+            <img src="/logo.svg" alt="V.HUB" className="h-12 w-12 drop-shadow-[0_0_15px_rgba(59,130,246,0.5)]" />
           </div>
-          <h1 className="vhub-page-title text-foreground mb-2" data-testid="text-welcome">{pt.auth.welcomeBack}</h1>
-          <p className="vhub-page-subtitle !mt-0">{pt.auth.signInSubtitle}</p>
+
+          <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-2xl p-8 shadow-2xl">
+            <div className="flex flex-col space-y-2 text-center mb-8">
+              <h2 className="text-2xl font-bold tracking-tight text-white">
+                {pt.auth.loginTitle}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {pt.auth.loginSubtitle}
+              </p>
+            </div>
+
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Input
+                    type="email"
+                    placeholder={pt.auth.emailPlaceholder}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className="bg-white/5 border-white/10 focus:border-primary/50 focus:ring-primary/20 h-11 transition-all"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Input
+                    type="password"
+                    placeholder={pt.auth.passwordPlaceholder}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="bg-white/5 border-white/10 focus:border-primary/50 focus:ring-primary/20 h-11 transition-all"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoggingIn}
+                className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-lg transition-all shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:shadow-[0_0_25px_rgba(59,130,246,0.5)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
+              >
+                {isLoggingIn ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {pt.auth.loginButton} <ArrowRight className="w-4 h-4" />
+              </button>
+            </form>
+
+            <div className="relative my-8">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-white/10" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-black/40 px-2 text-muted-foreground backdrop-blur-xl">
+                  {pt.auth.newHere}
+                </span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setMode("register")}
+              className="w-full h-11 border border-white/10 hover:bg-white/5 hover:text-white text-muted-foreground font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              {pt.auth.createAccount}
+            </button>
+          </div>
         </div>
-
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div className="vhub-field">
-            <label className="vhub-field-label" htmlFor="email">{pt.auth.email}</label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="nome@estudio.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="h-11 bg-card border-border/60"
-              required
-              data-testid="input-email"
-            />
-          </div>
-
-          <div className="vhub-field">
-            <label className="vhub-field-label" htmlFor="password">{pt.auth.password}</label>
-            <Input
-              id="password"
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="h-11 bg-card border-border/60"
-              required
-              data-testid="input-password"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={isLoggingIn}
-            className="vhub-btn-md vhub-btn-primary w-full mt-2"
-            data-testid="button-login"
-          >
-            {isLoggingIn ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <>
-                {pt.auth.login}
-                <ArrowRight className="w-4 h-4" />
-              </>
-            )}
-          </button>
-        </form>
-
-        <div className="mt-4">
-          <button
-            onClick={() => setMode("register")}
-            className="vhub-btn-ghost vhub-btn-md w-full gap-1.5"
-            data-testid="button-create-account"
-          >
-            <UserPlus className="w-4 h-4" />
-            {pt.auth.createAccount}
-          </button>
-        </div>
-
-        <p className="mt-8 text-center vhub-caption opacity-50">
-          {pt.common.platform}
-        </p>
       </div>
     </div>
   );

@@ -16,11 +16,17 @@ export function StudioLayout({ studioId, children }: StudioLayoutProps) {
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-background text-foreground">
+      <div className="flex min-h-screen w-full bg-background text-foreground relative overflow-hidden">
+        {/* Cinematic Background Gradient */}
+        <div className="fixed inset-0 z-0 pointer-events-none">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-primary/10 via-background to-background opacity-40"></div>
+          <div className="absolute inset-0 bg-[url('/grid-pattern.svg')] bg-repeat opacity-[0.03]"></div>
+        </div>
+
         <AppSidebar studioId={studioId} />
-        <div className="flex flex-col flex-1 w-full overflow-hidden min-w-0">
-          <header className="flex h-14 shrink-0 items-center gap-3 px-6 sticky top-0 z-10 border-b border-border/40 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
-            <SidebarTrigger className="-ml-1 h-8 w-8 text-muted-foreground hover:text-foreground transition-colors" data-testid="button-sidebar-trigger" />
+        <div className="flex flex-col flex-1 w-full overflow-hidden min-w-0 relative z-10">
+          <header className="flex h-16 shrink-0 items-center gap-4 px-6 sticky top-0 z-50 border-b border-white/5 bg-background/60 backdrop-blur-xl supports-[backdrop-filter]:bg-background/40 shadow-sm transition-all duration-300">
+            <SidebarTrigger className="-ml-2 h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all rounded-full" data-testid="button-sidebar-trigger" />
             <div className="flex-1" />
             
             <div className="flex items-center gap-2">

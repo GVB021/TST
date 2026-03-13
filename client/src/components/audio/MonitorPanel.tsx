@@ -186,10 +186,10 @@ export default function MonitorPanel({
   }, [micState, recordingStatus, lastRecording, savedSamples]);
 
   return (
-    <div className="flex items-center gap-1.5 h-full rounded-lg p-1" style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)" }}>
+    <div className="flex items-center gap-1.5 h-full rounded-lg p-1 bg-black/80 border border-white/10 shadow-inner">
       <canvas
         ref={waveCanvasRef}
-        className="flex-1 h-12 rounded"
+        className="flex-1 h-12 rounded opacity-90"
         style={{ imageRendering: "pixelated" }}
         data-testid="canvas-waveform"
       />

@@ -32,6 +32,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { formatTimecode, parseTimecode } from "@/lib/timecode";
+import { cn } from "@/lib/utils";
 
 import {
   requestMicrophone,
@@ -88,17 +89,16 @@ function DailyMeetPanel({ sessionId }: { sessionId: string }) {
   const panelHeight = isOpen ? (isCompact ? "200px" : "400px") : "0px";
 
   return (
-    <div className="mt-4 rounded-xl overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.04)" }} data-testid="panel-daily">
-      <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: isOpen ? "1px solid rgba(255,255,255,0.06)" : "none", background: "rgba(255,255,255,0.03)" }}>
-        <span className="text-[11px] font-medium flex items-center gap-1.5" style={{ color: "rgba(255,255,255,0.60)" }}>
-          <Mic className="w-3 h-3" style={{ color: "hsl(160 84% 60%)" }} /> Chat de Voz
+    <div className="mt-4 rounded-xl overflow-hidden glass-panel" data-testid="panel-daily">
+      <div className={cn("flex items-center justify-between px-3 py-2 transition-colors", isOpen ? "border-b border-border/50 bg-muted/20" : "bg-transparent")}>
+        <span className="text-[11px] font-medium flex items-center gap-1.5 text-muted-foreground">
+          <Mic className="w-3 h-3 text-emerald-500" /> Chat de Voz
         </span>
         <div className="flex items-center gap-2">
           {isOpen && !isCompact && (
             <button
               onClick={() => setIsCompact(true)}
-              className="text-[11px] transition-colors flex items-center gap-1"
-              style={{ color: "rgba(255,255,255,0.40)" }}
+              className="text-[11px] transition-colors flex items-center gap-1 text-muted-foreground hover:text-foreground"
               data-testid="button-compact-daily"
             >
               <Minimize2 className="w-3 h-3" /> Reduzir
@@ -107,8 +107,7 @@ function DailyMeetPanel({ sessionId }: { sessionId: string }) {
           {isOpen && isCompact && (
             <button
               onClick={() => setIsCompact(false)}
-              className="text-[11px] transition-colors flex items-center gap-1"
-              style={{ color: "rgba(255,255,255,0.40)" }}
+              className="text-[11px] transition-colors flex items-center gap-1 text-muted-foreground hover:text-foreground"
               data-testid="button-expand-daily"
             >
               <Maximize2 className="w-3 h-3" /> Expandir
@@ -116,7 +115,7 @@ function DailyMeetPanel({ sessionId }: { sessionId: string }) {
           )}
           <button
             onClick={() => setIsOpen(v => !v)}
-            className="text-[11px] transition-colors flex items-center gap-1" style={{ color: "rgba(255,255,255,0.40)" }}
+            className="text-[11px] transition-colors flex items-center gap-1 text-muted-foreground hover:text-foreground"
             data-testid="button-toggle-daily"
           >
             {isOpen ? <><X className="w-3 h-3" /> Minimizar</> : <><Mic className="w-3 h-3" /> Abrir</>}
@@ -129,12 +128,12 @@ function DailyMeetPanel({ sessionId }: { sessionId: string }) {
         transition: "height 0.3s ease",
       }}>
         {loading && (
-          <div className="flex items-center justify-center" style={{ height: isCompact ? "200px" : "400px", color: "rgba(255,255,255,0.40)" }}>
+          <div className="flex items-center justify-center text-muted-foreground" style={{ height: isCompact ? "200px" : "400px" }}>
             <span className="text-xs">Criando sala de voz...</span>
           </div>
         )}
         {error && (
-          <div className="flex items-center justify-center" style={{ height: isCompact ? "200px" : "400px", color: "rgba(255,100,100,0.70)" }}>
+          <div className="flex items-center justify-center text-destructive" style={{ height: isCompact ? "200px" : "400px" }}>
             <span className="text-xs">{error}</span>
           </div>
         )}
@@ -374,13 +373,13 @@ function DeviceSettingsPanel({
   const speakers = devices.filter((d) => d.kind === "audiooutput");
 
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
-      <div className="rounded-2xl w-[480px] overflow-hidden" style={{ background: "rgba(15,15,30,0.95)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.10)", boxShadow: "0 12px 48px rgba(0,0,0,0.5)" }}>
-        <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-          <span className="text-sm font-semibold" style={{ color: "hsl(210 40% 96%)" }}>Configuracoes de Dispositivo</span>
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="rounded-2xl w-[480px] overflow-hidden glass-panel shadow-2xl">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border/50">
+          <span className="text-sm font-semibold text-foreground">Configuracoes de Dispositivo</span>
           <button
             onClick={onClose}
-            className="transition-colors" style={{ color: "rgba(255,255,255,0.40)" }}
+            className="transition-colors text-muted-foreground hover:text-foreground"
             data-testid="button-close-device-settings"
           >
             <X className="w-4 h-4" />
@@ -389,7 +388,7 @@ function DeviceSettingsPanel({
         
         {!permissionGranted && (
           <div className="px-6 py-4 bg-yellow-500/10 border-b border-yellow-500/20">
-            <p className="text-xs text-yellow-200 mb-2">Permissao de microfone necessaria para listar dispositivos.</p>
+            <p className="text-xs text-yellow-600 dark:text-yellow-200 mb-2">Permissao de microfone necessaria para listar dispositivos.</p>
             <button onClick={requestPerms} className="vhub-btn-xs vhub-btn-secondary">Conceder Permissao</button>
           </div>
         )}
@@ -399,13 +398,13 @@ function DeviceSettingsPanel({
             <div className="flex items-center justify-between">
               <label className="vhub-label block">Microfone</label>
               {settings.inputDeviceId && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                   Ativo
                 </span>
               )}
             </div>
             <select
-              className="w-full h-9 rounded-lg px-3 text-sm bg-black/20 border border-white/10 text-white focus:border-blue-500 outline-none"
+              className="w-full h-9 rounded-lg px-3 text-sm bg-muted/50 border border-border text-foreground focus:border-primary outline-none"
               value={settings.inputDeviceId}
               onChange={(e) => onSettingsChange({ ...settings, inputDeviceId: e.target.value })}
               data-testid="select-microphone"
@@ -417,7 +416,7 @@ function DeviceSettingsPanel({
               ))}
             </select>
             
-            <div className="h-2 rounded-full overflow-hidden bg-black/40 border border-white/5 relative">
+            <div className="h-2 rounded-full overflow-hidden bg-muted border border-border relative">
               <canvas ref={canvasRef} width={430} height={8} className="w-full h-full block" />
             </div>
           </div>
@@ -426,7 +425,7 @@ function DeviceSettingsPanel({
             <label className="vhub-label block">Alto-falante (Monitor)</label>
             <div className="flex gap-2">
               <select
-                className="flex-1 h-9 rounded-lg px-3 text-sm bg-black/20 border border-white/10 text-white focus:border-blue-500 outline-none"
+                className="flex-1 h-9 rounded-lg px-3 text-sm bg-muted/50 border border-border text-foreground focus:border-primary outline-none"
                 value={settings.outputDeviceId}
                 onChange={(e) => onSettingsChange({ ...settings, outputDeviceId: e.target.value })}
                 data-testid="select-speaker"
@@ -443,19 +442,19 @@ function DeviceSettingsPanel({
               </select>
               <button 
                 onClick={playTestSound}
-                className="h-9 px-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+                className="h-9 px-3 rounded-lg bg-muted hover:bg-muted/80 border border-border transition-colors"
                 title="Testar som"
               >
-                <Volume2 className="w-4 h-4 text-white/70" />
+                <Volume2 className="w-4 h-4 text-muted-foreground" />
               </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-white/5 border border-white/5">
+          <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-muted/30 border border-border/50">
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="vhub-label">Ganho (Input)</label>
-                <span className="text-xs font-mono text-white/50">{Math.round(settings.inputGain * 100)}%</span>
+                <span className="text-xs font-mono text-muted-foreground">{Math.round(settings.inputGain * 100)}%</span>
               </div>
               <input
                 type="range"
@@ -466,14 +465,14 @@ function DeviceSettingsPanel({
                 onChange={(e) =>
                   onSettingsChange({ ...settings, inputGain: parseFloat(e.target.value) })
                 }
-                className="w-full h-1.5 accent-blue-500 bg-white/10 rounded-full appearance-none cursor-pointer"
+                className="w-full h-1.5 accent-primary bg-muted rounded-full appearance-none cursor-pointer"
                 data-testid="slider-input-gain"
               />
             </div>
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="vhub-label">Volume (Output)</label>
-                <span className="text-xs font-mono text-white/50">{Math.round(settings.monitorVolume * 100)}%</span>
+                <span className="text-xs font-mono text-muted-foreground">{Math.round(settings.monitorVolume * 100)}%</span>
               </div>
               <input
                 type="range"
@@ -484,7 +483,7 @@ function DeviceSettingsPanel({
                 onChange={(e) =>
                   onSettingsChange({ ...settings, monitorVolume: parseFloat(e.target.value) })
                 }
-                className="w-full h-1.5 accent-blue-500 bg-white/10 rounded-full appearance-none cursor-pointer"
+                className="w-full h-1.5 accent-primary bg-muted rounded-full appearance-none cursor-pointer"
                 data-testid="slider-monitor-volume"
               />
             </div>
@@ -495,14 +494,14 @@ function DeviceSettingsPanel({
             <select
               value={settings.voiceCaptureMode}
               onChange={(e) => onSettingsChange({ ...settings, voiceCaptureMode: e.target.value as VoiceCaptureMode })}
-              className="w-full h-9 rounded-lg px-3 text-sm bg-black/20 border border-white/10 text-white focus:border-blue-500 outline-none"
+              className="w-full h-9 rounded-lg px-3 text-sm bg-muted/50 border border-border text-foreground focus:border-primary outline-none"
               data-testid="select-voice-capture-mode"
             >
               <option value="studio">Studio Mode (Processado)</option>
               <option value="original">Microfone Original</option>
               <option value="high-fidelity">High-End (Lossless 24-bit)</option>
             </select>
-            <p className="text-[10px] mt-2 leading-relaxed" style={{ color: "rgba(255,255,255,0.4)" }}>
+            <p className="text-[10px] mt-2 leading-relaxed text-muted-foreground">
               {settings.voiceCaptureMode === "studio"
                 ? "Filtro passa-alta 80Hz + compressor + reducao de ruido. Ideal para ambientes ruidosos."
                 : settings.voiceCaptureMode === "high-fidelity"
@@ -512,11 +511,11 @@ function DeviceSettingsPanel({
           </div>
 
           {settings.voiceCaptureMode === "high-fidelity" && (
-            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 flex gap-3 items-start">
-              <div className="mt-0.5 w-2 h-2 shrink-0 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse" />
+            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 flex gap-3 items-start">
+              <div className="mt-0.5 w-2 h-2 shrink-0 rounded-full bg-destructive shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse" />
               <div>
-                <p className="text-xs font-medium text-red-200">Controle Exclusivo de Hardware</p>
-                <p className="text-[10px] text-red-300/60 leading-tight mt-0.5">
+                <p className="text-xs font-medium text-destructive">Controle Exclusivo de Hardware</p>
+                <p className="text-[10px] text-destructive/70 leading-tight mt-0.5">
                   O sistema assumiu o controle do driver de audio para garantir 48kHz/24-bit com latencia zero.
                 </p>
               </div>
@@ -607,21 +606,21 @@ function RecordingProfilePanel({
   const canSubmit = !isCreating && actorName.trim() && (hasCharacters ? !!selectedCharId : freeCharName.trim());
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
-      <div className="rounded-2xl w-[440px] overflow-hidden" style={{ background: "rgba(15,15,30,0.92)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.10)", boxShadow: "0 12px 48px rgba(0,0,0,0.5)" }}>
-        <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="rounded-2xl w-[440px] overflow-hidden glass-panel shadow-2xl">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border/50">
           <div className="flex items-center gap-2">
-            <User className="w-4 h-4" style={{ color: "hsl(220 100% 65%)" }} />
-            <span className="text-sm font-semibold" style={{ color: "hsl(210 40% 96%)" }}>Perfil de Gravacao</span>
+            <User className="w-4 h-4 text-primary" />
+            <span className="text-sm font-semibold text-foreground">Perfil de Gravacao</span>
           </div>
           {onClose && (
-            <button onClick={onClose} className="transition-colors" style={{ color: "rgba(255,255,255,0.40)" }} data-testid="button-close-profile">
+            <button onClick={onClose} className="transition-colors text-muted-foreground hover:text-foreground" data-testid="button-close-profile">
               <X className="w-4 h-4" />
             </button>
           )}
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
-          <p className="text-xs" style={{ color: "rgba(255,255,255,0.50)" }}>
+          <p className="text-xs text-muted-foreground">
             Configure seu perfil antes de gravar. Estes dados serao usados automaticamente em todos os takes.
           </p>
 
@@ -634,7 +633,7 @@ function RecordingProfilePanel({
               value={actorName}
               onChange={(e) => setActorName(e.target.value)}
               placeholder="Seu nome artistico"
-              className="w-full h-9 rounded-lg px-3 text-sm"
+              className="w-full h-9 rounded-lg px-3 text-sm bg-muted/50 border border-border text-foreground focus:border-primary outline-none"
               data-testid="input-actor-name"
             />
           </div>
@@ -647,7 +646,7 @@ function RecordingProfilePanel({
               <select
                 value={selectedCharId}
                 onChange={(e) => setSelectedCharId(e.target.value)}
-                className="w-full h-9 rounded-lg px-3 text-sm"
+                className="w-full h-9 rounded-lg px-3 text-sm bg-muted/50 border border-border text-foreground focus:border-primary outline-none"
                 data-testid="select-character"
               >
                 {characters.map((c) => (
@@ -662,7 +661,7 @@ function RecordingProfilePanel({
                 value={freeCharName}
                 onChange={(e) => setFreeCharName(e.target.value)}
                 placeholder="Nome do personagem"
-                className="w-full h-9 rounded-lg px-3 text-sm"
+                className="w-full h-9 rounded-lg px-3 text-sm bg-muted/50 border border-border text-foreground focus:border-primary outline-none"
                 data-testid="input-character-name"
               />
             )}
@@ -671,19 +670,19 @@ function RecordingProfilePanel({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="vhub-label mb-1 block">ID Usuario</label>
-              <div className="h-8 rounded-lg px-3 flex items-center text-xs font-mono truncate" style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.45)" }} data-testid="text-user-id">
+              <div className="h-8 rounded-lg px-3 flex items-center text-xs font-mono truncate bg-muted/30 text-muted-foreground" data-testid="text-user-id">
                 {user?.id?.slice(0, 12)}...
               </div>
             </div>
             <div>
               <label className="vhub-label mb-1 block">Sessao</label>
-              <div className="h-8 rounded-lg px-3 flex items-center text-xs font-mono truncate" style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.45)" }} data-testid="text-session-id">
+              <div className="h-8 rounded-lg px-3 flex items-center text-xs font-mono truncate bg-muted/30 text-muted-foreground" data-testid="text-session-id">
                 {sessionId?.slice(0, 12)}...
               </div>
             </div>
           </div>
         </div>
-        <div className="px-6 py-4 flex justify-end" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+        <div className="px-6 py-4 flex justify-end border-t border-border/50">
           <button
             onClick={handleSubmit}
             disabled={!canSubmit}
@@ -1608,10 +1607,10 @@ export default function RecordingRoom() {
 
   if (sessionLoading || (session && productionLoading)) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center" style={{ background: "linear-gradient(135deg, #0a0a1a, #0d1125, #0a0a1a)" }}>
+      <div className="h-screen w-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 rounded-full animate-spin" style={{ border: "2px solid rgba(255,255,255,0.10)", borderTopColor: "hsl(220 100% 55%)" }} />
-          <p className="text-sm" style={{ color: "rgba(255,255,255,0.45)" }}>Carregando sala de gravacao...</p>
+          <div className="w-12 h-12 rounded-full animate-spin border-2 border-muted border-t-primary" />
+          <p className="text-sm text-muted-foreground">Carregando sala de gravacao...</p>
         </div>
       </div>
     );
@@ -1619,11 +1618,11 @@ export default function RecordingRoom() {
 
   if (sessionError) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center" style={{ background: "linear-gradient(135deg, #0a0a1a, #0d1125, #0a0a1a)" }}>
+      <div className="h-screen w-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4 text-center px-6">
-          <AlertCircle className="w-12 h-12" style={{ color: "hsl(0 72% 65%)" }} />
-          <p className="text-sm font-medium" style={{ color: "hsl(210 40% 96%)" }}>Erro ao carregar sessao</p>
-          <p className="text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>Verifique se voce tem acesso a este estudio e sessao.</p>
+          <AlertCircle className="w-12 h-12 text-destructive" />
+          <p className="text-sm font-medium text-foreground">Erro ao carregar sessao</p>
+          <p className="text-xs text-muted-foreground">Verifique se voce tem acesso a este estudio e sessao.</p>
           <Link href={`/studio/${studioId}/sessions`}>
             <button className="mt-2 vhub-btn-sm vhub-btn-primary" data-testid="button-back-sessions">
               Voltar para Sessoes
@@ -1635,19 +1634,25 @@ export default function RecordingRoom() {
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex flex-col select-none relative" style={{ background: "linear-gradient(135deg, #0a0a1a, #0d1125, #0a0a1a)", color: "hsl(210 40% 96%)" }}>
+    <div className="h-screen w-screen overflow-hidden flex flex-col select-none relative bg-background text-foreground">
+      {/* Cinematic Background */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-primary/5 via-background to-background opacity-50"></div>
+        <div className="absolute inset-0 bg-[url('/grid-pattern.svg')] bg-repeat opacity-[0.02]"></div>
+      </div>
+
       {recordingStatus === "countdown" && countdownValue > 0 && (
         <CountdownOverlay count={countdownValue} />
       )}
 
       {isCustomizing && (
-        <div className="absolute inset-0 z-40 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
-          <div className="rounded-2xl w-[420px] overflow-hidden" style={{ background: "rgba(15,15,30,0.92)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.10)", boxShadow: "0 12px 48px rgba(0,0,0,0.5)" }}>
-            <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-              <span className="text-sm font-semibold" style={{ color: "hsl(210 40% 96%)" }}>Atalhos de Teclado</span>
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="rounded-2xl w-[420px] overflow-hidden glass-panel shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border/50">
+              <span className="text-sm font-semibold text-foreground">Atalhos de Teclado</span>
               <button
                 onClick={() => { setIsCustomizing(false); setPendingShortcuts(shortcuts); setListeningFor(null); }}
-                className="transition-colors" style={{ color: "rgba(255,255,255,0.40)" }}
+                className="transition-colors text-muted-foreground hover:text-foreground"
                 data-testid="button-close-shortcuts"
               >
                 <X className="w-4 h-4" />
@@ -2001,9 +2006,9 @@ export default function RecordingRoom() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
-        <div className="flex flex-col" style={{ width: "56%", borderRight: "1px solid rgba(255,255,255,0.08)" }}>
-          <div className="flex-1 relative overflow-hidden" style={{ background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.06)", margin: "4px 4px 0 4px", borderRadius: "12px" }}>
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        <div className="flex flex-col w-full lg:w-[56%] border-b lg:border-b-0 lg:border-r border-border relative">
+          <div className="flex-1 relative overflow-hidden bg-black/40 border border-white/5 m-1 lg:m-1 rounded-xl">
             {production?.videoUrl ? (
               <video
                 ref={videoRef}
@@ -2080,9 +2085,9 @@ export default function RecordingRoom() {
             </div>
           )}
 
-          <div className="h-24 shrink-0 px-5 flex items-center justify-between" style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-            <div className="w-56 shrink-0 flex flex-col justify-center gap-1 h-full py-3">
-              <div className="flex items-center justify-between text-[10px] mb-0.5" style={{ color: "rgba(255,255,255,0.45)" }}>
+          <div className="h-auto min-h-[6rem] lg:h-24 shrink-0 px-4 lg:px-5 py-3 flex flex-wrap lg:flex-nowrap items-center justify-between gap-4 bg-background/40 backdrop-blur-xl border-t border-border/10">
+            <div className="w-full lg:w-56 shrink-0 flex flex-col justify-center gap-1 h-full">
+              <div className="flex items-center justify-between text-[10px] mb-0.5 text-muted-foreground">
                 <span className="uppercase tracking-wider">
                   {recordingStatus === "recording" ? "Ao Vivo" :
                     recordingStatus === "previewing" ? "Reproduzindo" :
@@ -2118,7 +2123,7 @@ export default function RecordingRoom() {
               />
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full lg:w-auto justify-center overflow-x-auto no-scrollbar py-2 lg:py-0">
               <button
                 onClick={() => seek(-2)}
                 className="w-9 h-9 rounded-xl flex items-center justify-center transition-all" style={{ color: "rgba(255,255,255,0.45)", background: "rgba(255,255,255,0.05)" }}
@@ -2241,10 +2246,10 @@ export default function RecordingRoom() {
               </button>
             </div>
 
-            <div className="w-44 shrink-0 flex flex-col items-end gap-1.5">
+            <div className="hidden lg:flex w-44 shrink-0 flex-col items-end gap-1.5">
               {isLooping && (
                 <div className="flex flex-col items-end gap-1">
-                  <div className="flex items-center gap-1.5 text-[10px]" style={{ color: "rgba(255,255,255,0.45)" }}>
+                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                     <span>Pre-roll</span>
                     <div className="flex gap-0.5">
                       {[0.5, 1, 2, 3].map((v) => (
@@ -2291,9 +2296,9 @@ export default function RecordingRoom() {
           </div>
         </div>
 
-        <div className="flex flex-col" style={{ width: "44%", background: "rgba(255,255,255,0.02)" }}>
-          <div className="h-11 shrink-0 px-5 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.03)" }}>
-            <span className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.40)" }}>
+        <div className="flex flex-col w-full lg:w-[44%] bg-muted/5 border-t lg:border-t-0 lg:border-l border-border/5">
+          <div className="h-11 shrink-0 px-5 flex items-center justify-between border-b border-white/5 bg-white/5">
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
               Roteiro
             </span>
             <span className="text-xs" style={{ color: "rgba(255,255,255,0.40)" }}>

@@ -63,8 +63,8 @@
   }
 
   .dark {
-    /* Apple-like Dark Mode */
-    --background: 0 0% 0%; /* True Black */
+    /* Premium Cinematic Dark Mode */
+    --background: 240 10% 3.9%; /* Deep almost-black */
     --foreground: 0 0% 98%;
 
     --card: 240 10% 3.9%;
@@ -75,43 +75,57 @@
     --popover-foreground: 0 0% 98%;
     --popover-border: 240 3.7% 15.9%;
 
-    /* Apple Blue Dark Mode #2997ff */
-    --primary: 211 100% 50%;
-    --primary-foreground: 0 0% 100%;
-    --primary-border: 211 100% 50%;
+    /* Electric Blue / Neon Cyan for accents */
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
+    --primary-border: 217 91% 60%;
 
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --secondary-border: 240 3.7% 15.9%;
+    --secondary: 217 32% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --secondary-border: 217 32% 17%;
 
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --muted-border: 240 3.7% 15.9%;
+    --muted: 217 32% 17%;
+    --muted-foreground: 215 20% 65%;
+    --muted-border: 217 32% 17%;
 
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --accent-border: 240 3.7% 15.9%;
+    --accent: 217 32% 17%;
+    --accent-foreground: 210 40% 98%;
+    --accent-border: 217 32% 17%;
 
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
     --destructive-border: 0 62.8% 30.6%;
 
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 211 100% 50%;
+    --border: 217 32% 17%;
+    --input: 217 32% 17%;
+    --ring: 224 76% 48%;
 
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 211 100% 50%;
+    --radius: 0.5rem;
+  }
+}
 
-    --glass-bg: rgba(0, 0, 0, 0.7);
-    --glass-bg-hover: rgba(0, 0, 0, 0.8);
-    --glass-border: rgba(255, 255, 255, 0.1);
+@layer utilities {
+  .glass-panel {
+    @apply bg-background/60 backdrop-blur-xl border border-border/50 shadow-sm dark:bg-white/[0.02] dark:border-white/10 dark:shadow-2xl;
+  }
+  
+  .glass-card {
+    @apply bg-card/50 backdrop-blur-md border border-border/50 shadow-sm hover:border-border/80 transition-all duration-300 dark:bg-black/40 dark:border-white/5 dark:hover:border-white/10;
+  }
+
+  .text-glow {
+    text-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-white/10 rounded-full hover:bg-white/20 transition-colors;
   }
 }
 
