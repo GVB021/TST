@@ -285,7 +285,7 @@ export class DatabaseStorage implements IStorage {
       isActive: take.isActive ?? true,
     };
 
-    const [newTake] = await db.insert(takes).values(normalizedTake).returning();
+    let [newTake] = await db.insert(takes).values(normalizedTake).returning();
 
     if (newTake.trackId && newTake.isActive) {
       const newStart = Number(newTake.startTimeSeconds || 0);
@@ -302,9 +302,31 @@ export class DatabaseStorage implements IStorage {
         ));
 
       if (overlapping.length > 0) {
-        await db.update(takes)
-          .set({ isActive: false })
-          .where(inArray(takes.id, overlapping.map(t => t.id)));
+        const overlappingIds = overlapping.map((t) => t.id);
+        const overlappingActiveTakes = await db.select({
+          id: takes.id,
+          qualityScore: takes.qualityScore,
+        })
+          .from(takes)
+          .where(inArray(takes.id, overlappingIds));
+
+        const currentBestScore = overlappingActiveTakes.reduce((best, activeTake) => {
+          const score = Number(activeTake.qualityScore ?? -1);
+          return Math.max(best, score);
+        }, -1);
+        const newScore = Number(newTake.qualityScore ?? -1);
+
+        if (newScore > currentBestScore) {
+          await db.update(takes)
+            .set({ isActive: false })
+            .where(inArray(takes.id, overlappingIds));
+        } else {
+          const [updated] = await db.update(takes)
+            .set({ isActive: false })
+            .where(eq(takes.id, newTake.id))
+            .returning();
+          newTake = updated;
+        }
       }
     }
 

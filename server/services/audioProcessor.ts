@@ -1,4 +1,4 @@
-import { exec } from "child_process";
+import { exec, execFile } from "child_process";
 import path from "path";
 import fs from "node:fs";
 
@@ -18,6 +18,12 @@ interface ProcessingResult {
     offset_ms: number;
     duration_ms: number;
   };
+}
+
+interface QualityResult {
+  status: "success" | "error";
+  quality_score?: number;
+  message?: string;
 }
 
 export class AudioProcessor {
@@ -186,6 +192,40 @@ export class AudioProcessor {
           resolve({ status: "error", message: "Saída inválida do processador de áudio" });
         }
       });
+    });
+  }
+
+  async analyzeSpeechQuality(filePath: string): Promise<number | null> {
+    return new Promise((resolve) => {
+      const pythonCmd = process.platform === "win32" ? "python" : "python3";
+      execFile(
+        pythonCmd,
+        [this.scriptPath, "quality", filePath],
+        { timeout: 120000, maxBuffer: 1024 * 1024 * 5 },
+        (error, stdout, stderr) => {
+          if (error) {
+            resolve(null);
+            return;
+          }
+
+          try {
+            const lines = stdout.trim().split("\n").filter(Boolean);
+            const lastLine = lines[lines.length - 1];
+            if (!lastLine) {
+              resolve(null);
+              return;
+            }
+            const result = JSON.parse(lastLine) as QualityResult;
+            if (result.status !== "success" || typeof result.quality_score !== "number") {
+              resolve(null);
+              return;
+            }
+            resolve(Math.max(1, Math.min(5, result.quality_score)));
+          } catch {
+            resolve(null);
+          }
+        }
+      );
     });
   }
 }

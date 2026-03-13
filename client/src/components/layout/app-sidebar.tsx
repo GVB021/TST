@@ -57,18 +57,17 @@ export const AppSidebar = memo(function AppSidebar({ studioId }: AppSidebarProps
     return items;
   }, [studioId, canManageMembers, canViewStaff, isStudioAdmin, isRestrictedRole]);
 
-  const activeItemClass = "bg-primary/10 text-primary font-medium shadow-[0_0_15px_rgba(59,130,246,0.3)] border-l-2 border-primary";
-  const inactiveItemClass = "text-muted-foreground/80 hover:bg-white/5 hover:text-white transition-all hover:pl-4";
+  const activeItemClass = "bg-primary/12 text-foreground font-medium border border-primary/30";
+  const inactiveItemClass = "text-muted-foreground/80 hover:bg-muted/70 hover:text-foreground transition-colors";
 
   return (
-    <Sidebar className="border-r border-white/5 bg-black/40 backdrop-blur-xl shadow-2xl z-20" collapsible="icon">
-      <SidebarHeader className="py-6 px-4 border-b border-white/5">
+    <Sidebar className="border-r border-border/60 bg-background/72 backdrop-blur-lg shadow-sm z-20" collapsible="icon">
+      <SidebarHeader className="py-6 px-4 border-b border-border/60">
         <div className="flex items-center gap-3 transition-all duration-300 group-data-[collapsible=icon]:justify-center">
-          <div className="relative">
-            <div className="absolute inset-0 bg-primary/50 blur-lg opacity-50 rounded-full"></div>
-            <img src="/logo.svg" alt="V.HUB" className="h-9 w-9 relative z-10 drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]" data-testid="img-logo-sidebar" />
+          <div className="h-9 w-9 rounded-xl border border-border/70 bg-card/70 flex items-center justify-center">
+            <img src="/logo.svg" alt="V.HUB" className="h-6 w-6" data-testid="img-logo-sidebar" />
           </div>
-          <span className="font-bold tracking-tight text-xl bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent group-data-[collapsible=icon]:hidden" data-testid="text-brand-name">V.HUB</span>
+          <span className="font-semibold tracking-tight text-base text-foreground group-data-[collapsible=icon]:hidden" data-testid="text-brand-name">V.HUB</span>
         </div>
       </SidebarHeader>
 
@@ -87,7 +86,7 @@ export const AppSidebar = memo(function AppSidebar({ studioId }: AppSidebarProps
                       asChild
                       isActive={isActive}
                       tooltip={item.title}
-                      className={`h-10 rounded-r-lg rounded-l-none transition-all duration-300 mb-1 ${
+                      className={`h-10 rounded-lg transition-colors mb-1 border border-transparent ${
                         isActive ? activeItemClass : inactiveItemClass
                       }`}
                     >

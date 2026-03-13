@@ -567,6 +567,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       let audioUrl = req.body.audioUrl || "";
       let parsedMetadata = req.file?.originalname ? audioProcessor.parseMetadata(req.file.originalname) : null;
       let computedDurationSeconds = Number(durationSeconds) || 0;
+      let localAudioFilePath: string | null = null;
 
       if (req.file) {
         const originalName = req.file.originalname || "";
@@ -574,6 +575,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const filename = safeName || `take_${Date.now()}_${Math.random().toString(36).slice(2)}.wav`;
         const filePath = path.join(uploadsDir, filename);
         fs.writeFileSync(filePath, req.file.buffer);
+        localAudioFilePath = filePath;
 
         try {
           // Upload to Supabase Storage "uploads" bucket
@@ -600,6 +602,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const effectiveStartTime = Number(startTimeSeconds) || parsedMetadata?.startTimeSeconds || 0;
       const characterName = (req.body.characterName || parsedMetadata?.character || "Unknown").trim();
       const actorName = (req.body.voiceActorName || parsedMetadata?.actor || "Unknown").trim();
+      const providedQualityScore = qualityScore ? Number(qualityScore) : null;
+      const qualitySourcePath = localAudioFilePath || await ensureAudioFile(audioUrl);
+      const analyzedMos = qualitySourcePath ? await audioProcessor.analyzeSpeechQuality(qualitySourcePath) : null;
+      const persistedQualityScore = analyzedMos ?? providedQualityScore;
 
       const track = await storage.getOrCreateTimelineTrack(
         sessionCheck.productionId,
@@ -617,7 +623,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         audioUrl,
         durationSeconds: computedDurationSeconds,
         isActive: true,
-        qualityScore: qualityScore ? Number(qualityScore) : null,
+        qualityScore: persistedQualityScore,
       });
 
       res.status(201).json(take);

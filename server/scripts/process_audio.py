@@ -7,6 +7,7 @@ import tempfile
 import urllib.parse
 import urllib.request
 import zipfile
+from typing import Any
 import librosa
 import numpy as np
 import soundfile as sf
@@ -15,6 +16,8 @@ from pydub import AudioSegment
 
 DEFAULT_SR = 44100
 SILENCE_TOP_DB = 30
+_NISQA_RUNNER = None
+_NISQA_ERROR = None
 
 def process_audio(original_path, retake_path, output_path, start_time_ms=None):
     try:
@@ -209,8 +212,102 @@ def parse_bounce_payload(raw_payload):
     except Exception as error:
         raise RuntimeError(f"Payload de bounce invalido: {error}")
 
+def _extract_mos_from_prediction(prediction: Any):
+    if prediction is None:
+        return None
+    if isinstance(prediction, dict):
+        keys = ("mos", "mos_pred", "MOS", "MOS_pred")
+        for key in keys:
+            value = prediction.get(key)
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, list) and value and isinstance(value[0], (int, float)):
+                return float(value[0])
+    if isinstance(prediction, (list, tuple)) and prediction:
+        for value in prediction:
+            mos = _extract_mos_from_prediction(value)
+            if mos is not None:
+                return mos
+    if hasattr(prediction, "to_dict"):
+        try:
+            converted = prediction.to_dict()
+            mos = _extract_mos_from_prediction(converted)
+            if mos is not None:
+                return mos
+        except Exception:
+            pass
+    if hasattr(prediction, "item"):
+        try:
+            value = prediction.item()
+            if isinstance(value, (int, float)):
+                return float(value)
+        except Exception:
+            pass
+    return None
+
+def _build_nisqa_runner():
+    model_path = os.environ.get("NISQA_MODEL_PATH", "")
+    output_dir = os.environ.get("NISQA_OUTPUT_DIR", tempfile.gettempdir())
+
+    try:
+        from nisqa.NISQA_model import nisqaModel  # type: ignore
+    except Exception:
+        return None
+
+    def runner(file_path):
+        args = {
+            "mode": "predict_file",
+            "deg": file_path,
+            "output_dir": output_dir,
+            "csv_file": "nisqa_pred.csv",
+        }
+        if model_path:
+            args["pretrained_model"] = model_path
+
+        model = nisqaModel(args)
+        prediction_result = model.predict()
+        mos = _extract_mos_from_prediction(prediction_result)
+
+        if mos is None and hasattr(model, "predictions"):
+            mos = _extract_mos_from_prediction(model.predictions)
+
+        if mos is None:
+            raise RuntimeError("Nao foi possivel extrair MOS do NISQA")
+
+        return float(mos)
+
+    return runner
+
+def _get_nisqa_runner():
+    global _NISQA_RUNNER, _NISQA_ERROR
+    if _NISQA_RUNNER is not None:
+        return _NISQA_RUNNER
+    if _NISQA_ERROR is not None:
+        raise RuntimeError(_NISQA_ERROR)
+    try:
+        runner = _build_nisqa_runner()
+        if runner is None:
+            raise RuntimeError("Pacote NISQA indisponivel no ambiente Python")
+        _NISQA_RUNNER = runner
+        return _NISQA_RUNNER
+    except Exception as error:
+        _NISQA_ERROR = str(error)
+        raise
+
+def analyze_speech_quality(file_path):
+    if not os.path.exists(file_path):
+        raise RuntimeError("Arquivo para analise nao encontrado")
+    runner = _get_nisqa_runner()
+    mos = float(runner(file_path))
+    return max(1.0, min(5.0, mos))
+
 if __name__ == "__main__":
     try:
+        if len(sys.argv) >= 3 and sys.argv[1] == "quality":
+            mos_score = analyze_speech_quality(sys.argv[2])
+            print(json.dumps({"status": "success", "quality_score": mos_score}))
+            sys.exit(0)
+
         if len(sys.argv) >= 3 and sys.argv[1] == "bounce":
             payload = parse_bounce_payload(sys.argv[2])
             print(json.dumps(execute_bounce(payload)))

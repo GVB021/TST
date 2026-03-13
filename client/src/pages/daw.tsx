@@ -15,6 +15,7 @@ interface TimelineTake {
   durationSeconds: number;
   isActive: boolean;
   audioUrl: string;
+  qualityScore?: number | null;
 }
 
 interface TimelineTrack {
@@ -36,6 +37,19 @@ function formatTimecode(totalSeconds: number): string {
   const mm = String(Math.floor((safeSeconds % 3600) / 60)).padStart(2, "0");
   const ss = String(safeSeconds % 60).padStart(2, "0");
   return `${hh}:${mm}:${ss}`;
+}
+
+function qualityBadgeStyles(score: number | null | undefined) {
+  if (typeof score !== "number") {
+    return "bg-white/10 text-white/65 border-white/20";
+  }
+  if (score > 4) {
+    return "bg-emerald-500/20 text-emerald-300 border-emerald-400/40";
+  }
+  if (score >= 3) {
+    return "bg-amber-500/20 text-amber-300 border-amber-400/40";
+  }
+  return "bg-rose-500/20 text-rose-300 border-rose-400/40";
 }
 
 export default function Daw({ studioId }: { studioId: string }) {
@@ -191,7 +205,7 @@ export default function Daw({ studioId }: { studioId: string }) {
                         initial={{ opacity: 0, y: 6 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.24 }}
-                        className="absolute top-3 h-8 rounded-md border text-[11px] font-medium px-2 flex items-center"
+                        className="absolute top-3 h-8 rounded-md border text-[11px] font-medium px-2 flex items-center gap-2"
                         style={{
                           left: take.startTimeSeconds * pixelsPerSecond,
                           width: Math.max(36, take.durationSeconds * pixelsPerSecond),
@@ -201,7 +215,10 @@ export default function Daw({ studioId }: { studioId: string }) {
                         }}
                         title={`${track.name} • ${formatTimecode(take.startTimeSeconds)} • ${take.durationSeconds.toFixed(2)}s`}
                       >
-                        {formatTimecode(take.startTimeSeconds)}
+                        <span>{formatTimecode(take.startTimeSeconds)}</span>
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] border ${qualityBadgeStyles(take.qualityScore)}`}>
+                          Score: {typeof take.qualityScore === "number" ? `${take.qualityScore.toFixed(1)}/5` : "--/5"}
+                        </span>
                       </motion.div>
                     ))}
                   </div>

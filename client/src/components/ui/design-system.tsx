@@ -9,7 +9,7 @@ interface PageSectionProps {
 }
 export function PageSection({ children, className }: PageSectionProps) {
   return (
-    <div className={cn("space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700", className)}>
+    <div className={cn("space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500", className)}>
       {children}
     </div>
   );
@@ -32,8 +32,8 @@ export function PageHeader({ label, title, subtitle, action, className }: PageHe
             {label}
           </p>
         )}
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">{title}</h1>
-        {subtitle && <p className="text-lg text-muted-foreground max-w-2xl">{subtitle}</p>}
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">{title}</h1>
+        {subtitle && <p className="text-base text-muted-foreground max-w-2xl">{subtitle}</p>}
       </div>
       {action && <div className="shrink-0 flex items-center gap-2">{action}</div>}
     </div>
@@ -51,7 +51,7 @@ interface StatCardProps {
 }
 export function StatCard({ label, value, icon, valueClassName, className, description }: StatCardProps) {
   return (
-    <div className={cn("rounded-xl border bg-card text-card-foreground shadow-sm p-6 transition-all hover:shadow-md", className)}>
+    <div className={cn("rounded-2xl border border-border/70 bg-card/75 backdrop-blur-sm text-card-foreground shadow-sm p-6 transition-colors hover:bg-card", className)}>
       <div className="flex items-center justify-between space-y-0 pb-2">
         <p className="text-sm font-medium text-muted-foreground">{label}</p>
         <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
@@ -78,7 +78,7 @@ interface EmptyStateProps {
 }
 export function EmptyState({ icon, title, description, action, className }: EmptyStateProps) {
   return (
-    <div className={cn("rounded-xl border border-dashed bg-muted/30 flex flex-col items-center justify-center py-16 px-8 text-center", className)}>
+    <div className={cn("rounded-2xl border border-border/70 bg-card/65 backdrop-blur-sm flex flex-col items-center justify-center py-16 px-8 text-center", className)}>
       <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4 text-muted-foreground">
         {icon}
       </div>
@@ -169,7 +169,7 @@ export function GridSkeleton({ count = 6, className }: { count?: number; classNa
   return (
     <div className={cn("grid gap-4 sm:grid-cols-2 lg:grid-cols-3", className)}>
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="rounded-xl border bg-card text-card-foreground shadow-sm h-[120px] animate-pulse bg-muted/50" />
+        <div key={i} className="rounded-2xl border border-border/70 bg-card/60 h-[120px] animate-pulse" />
       ))}
     </div>
   );
