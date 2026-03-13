@@ -894,6 +894,8 @@ export default function RecordingRoom() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const recordingStartTimecodeRef = useRef(0);
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const scriptViewportRef = useRef<HTMLDivElement | null>(null);
+  const telepromptRafRef = useRef<number | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -1214,10 +1216,67 @@ export default function RecordingRoom() {
     };
   }, [scriptLines, currentLine, isLooping, preRoll, postRoll]);
 
+  const getTelepromptTargetScroll = useCallback(() => {
+    const viewport = scriptViewportRef.current;
+    const activeEl = lineRefs.current[currentLine];
+    if (!viewport || !activeEl) return null;
+
+    const currentScript = scriptLines[currentLine];
+    const currentStart = currentScript?.start ?? 0;
+    const currentEnd = currentScript?.end ?? (currentStart + 1);
+    const lineDuration = Math.max(0.25, currentEnd - currentStart);
+    const lineProgress = Math.min(1, Math.max(0, (videoTime - currentStart) / lineDuration));
+
+    const nextIdx = Math.min(currentLine + 1, scriptLines.length - 1);
+    const nextEl = lineRefs.current[nextIdx];
+    const activeTop = activeEl.offsetTop;
+    const nextTop = nextEl ? nextEl.offsetTop : activeTop;
+    const interpolatedTop = activeTop + ((nextTop - activeTop) * lineProgress);
+
+    const focusY = viewport.clientHeight * 0.34;
+    const rawTarget = interpolatedTop - focusY;
+    const maxScroll = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+
+    return Math.min(maxScroll, Math.max(0, rawTarget));
+  }, [currentLine, scriptLines, videoTime]);
+
   useEffect(() => {
-    const el = lineRefs.current[currentLine];
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [currentLine]);
+    const viewport = scriptViewportRef.current;
+    if (!viewport) return;
+
+    const target = getTelepromptTargetScroll();
+    if (target === null) return;
+
+    if (telepromptRafRef.current) {
+      cancelAnimationFrame(telepromptRafRef.current);
+      telepromptRafRef.current = null;
+    }
+
+    const step = () => {
+      const nextTarget = getTelepromptTargetScroll();
+      if (nextTarget === null) return;
+
+      const current = viewport.scrollTop;
+      const diff = nextTarget - current;
+      if (Math.abs(diff) < 0.35) {
+        viewport.scrollTop = nextTarget;
+        return;
+      }
+
+      const factor = isPlaying ? 0.11 : 0.2;
+      viewport.scrollTop = current + (diff * factor);
+      telepromptRafRef.current = requestAnimationFrame(step);
+    };
+
+    telepromptRafRef.current = requestAnimationFrame(step);
+
+    return () => {
+      if (telepromptRafRef.current) {
+        cancelAnimationFrame(telepromptRafRef.current);
+        telepromptRafRef.current = null;
+      }
+    };
+  }, [getTelepromptTargetScroll, isPlaying]);
 
   useEffect(() => {
     if (!listeningFor) return;
@@ -2308,7 +2367,7 @@ export default function RecordingRoom() {
             </span>
           </div>
 
-          <div className="flex-1 overflow-y-auto py-3 px-4 min-h-0" style={{ scrollBehavior: "smooth" }}>
+          <div ref={scriptViewportRef} className="flex-1 overflow-y-auto py-3 px-4 min-h-0" style={{ scrollBehavior: "auto" }}>
             {scriptLines.length === 0 && !session && (
               <div className="flex flex-col items-center justify-center h-full gap-3" style={{ color: "rgba(255,255,255,0.40)" }}>
                 <div className="w-10 h-10 rounded-full animate-spin" style={{ border: "2px solid rgba(255,255,255,0.10)", borderTopColor: "hsl(220 100% 55%)" }} />
