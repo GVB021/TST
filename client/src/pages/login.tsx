@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, ArrowRight, ArrowLeft, UserPlus, CheckCircle2 } from "lucide-react";
+import { Loader2, ArrowRight, ArrowLeft, UserPlus, CheckCircle2, ShieldCheck, AudioWaveform, Clock3 } from "lucide-react";
 import { useLocation } from "wouter";
 import { pt } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
@@ -99,9 +99,9 @@ export default function Login() {
   // Cinematic Background Component
   const CinematicBackground = () => (
     <div className="fixed inset-0 z-0 pointer-events-none">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary/10 via-background to-background"></div>
-      <div className="absolute inset-0 bg-[url('/grid-pattern.svg')] bg-repeat opacity-[0.03]"></div>
-      <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-primary/5 to-transparent opacity-30"></div>
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-primary/14 via-background to-background" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_var(--tw-gradient-stops))] from-primary/10 via-transparent to-transparent opacity-70" />
+      <div className="absolute inset-0 bg-[linear-gradient(120deg,transparent_0%,rgba(37,99,235,0.08)_42%,transparent_78%)]" />
     </div>
   );
 
@@ -240,28 +240,36 @@ export default function Login() {
       <CinematicBackground />
 
       {/* Left Panel - Branding */}
-      <div className="hidden lg:flex w-1/2 relative z-10 flex-col justify-between p-12 border-r border-white/5 bg-black/20 backdrop-blur-sm">
+      <div className="hidden lg:flex w-1/2 relative z-10 flex-col justify-between p-12 border-r border-border/50 bg-black/10 backdrop-blur-md">
         <div className="flex items-center gap-3">
           <img src="/logo.svg" alt="V.HUB" className="h-10 w-10 drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]" />
           <span className="text-2xl font-bold tracking-tight text-white">V.HUB</span>
         </div>
         
-        <div className="space-y-6 max-w-lg">
-          <h1 className="text-5xl font-bold leading-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-white/90 to-white/50">
+        <div className="space-y-7 max-w-xl">
+          <h1 className="text-5xl font-semibold leading-[1.05] tracking-tight text-white">
             O Estúdio de Dublagem do Futuro.
           </h1>
-          <p className="text-lg text-muted-foreground leading-relaxed">
-            Gerencie produções, sessões e talentos em uma plataforma unificada, moderna e intuitiva.
+          <p className="text-base text-muted-foreground leading-relaxed max-w-lg">
+            Produção, sala e entrega final em um só lugar. Fluxo de ADR com timeline, takes inteligentes e operação profissional.
           </p>
-          <div className="flex gap-4">
-             <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10">
-               <CheckCircle2 className="w-4 h-4 text-primary" />
-               <span className="text-sm text-white/80">Gestão de Elenco</span>
-             </div>
-             <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10">
-               <CheckCircle2 className="w-4 h-4 text-primary" />
-               <span className="text-sm text-white/80">Escalas Inteligentes</span>
-             </div>
+          <div className="grid grid-cols-2 gap-3 max-w-lg">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-white/[0.03]">
+              <AudioWaveform className="w-4 h-4 text-primary" />
+              <span className="text-xs text-white/80">Timeline de Takes</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-white/[0.03]">
+              <ShieldCheck className="w-4 h-4 text-primary" />
+              <span className="text-xs text-white/80">Qualidade Assistida</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-white/[0.03]">
+              <Clock3 className="w-4 h-4 text-primary" />
+              <span className="text-xs text-white/80">Agendamento Preciso</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-white/[0.03]">
+              <CheckCircle2 className="w-4 h-4 text-primary" />
+              <span className="text-xs text-white/80">Entrega Organizada</span>
+            </div>
           </div>
         </div>
 
@@ -278,14 +286,15 @@ export default function Login() {
             <img src="/logo.svg" alt="V.HUB" className="h-12 w-12 drop-shadow-[0_0_15px_rgba(59,130,246,0.5)]" />
           </div>
 
-          <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-2xl p-8 shadow-2xl">
+          <div className="bg-black/35 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-[0_10px_40px_rgba(0,0,0,0.35)]">
             <div className="flex flex-col space-y-2 text-center mb-8">
-              <h2 className="text-2xl font-bold tracking-tight text-white">
+              <h2 className="text-2xl font-semibold tracking-tight text-white">
                 {pt.auth.loginTitle}
               </h2>
               <p className="text-sm text-muted-foreground">
                 {pt.auth.loginSubtitle}
               </p>
+              <p className="text-xs text-muted-foreground/80">Acesso seguro ao ambiente de produção e gravação.</p>
             </div>
 
             <form onSubmit={handleLogin} className="space-y-5">
@@ -315,19 +324,30 @@ export default function Login() {
               <button
                 type="submit"
                 disabled={isLoggingIn}
-                className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-lg transition-all shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:shadow-[0_0_25px_rgba(59,130,246,0.5)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
+                className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-lg transition-all shadow-[0_8px_24px_rgba(37,99,235,0.35)] hover:shadow-[0_12px_28px_rgba(37,99,235,0.45)] disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
               >
                 {isLoggingIn ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 {pt.auth.loginButton} <ArrowRight className="w-4 h-4" />
               </button>
             </form>
 
-            <div className="relative my-8">
+            <div className="grid grid-cols-2 gap-2 mt-5 mb-6">
+              <div className="rounded-lg border border-white/10 bg-white/[0.03] p-2 text-center">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Perfis</p>
+                <p className="text-xs text-white/85">Dublador • Direção</p>
+              </div>
+              <div className="rounded-lg border border-white/10 bg-white/[0.03] p-2 text-center">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Sessões</p>
+                <p className="text-xs text-white/85">Ao vivo e agendadas</p>
+              </div>
+            </div>
+
+            <div className="relative my-7">
               <div className="absolute inset-0 flex items-center">
                 <span className="w-full border-t border-white/10" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-black/40 px-2 text-muted-foreground backdrop-blur-xl">
+                <span className="bg-black/35 px-2 text-muted-foreground backdrop-blur-xl">
                   {pt.auth.newHere}
                 </span>
               </div>
