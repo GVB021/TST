@@ -21,6 +21,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { audioProcessor } from "./services/audioProcessor";
+import { uploadFile, supabase } from "./lib/supabase";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -28,7 +29,30 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 
 const uploadsDir = path.join(process.cwd(), "public", "uploads");
 fs.mkdirSync(uploadsDir, { recursive: true });
 
-function safeAudioPath(audioUrl: string): string | null {
+async function ensureAudioFile(audioUrl: string): Promise<string | null> {
+  if (!audioUrl) return null;
+
+  // Remote URL (Supabase)
+  if (audioUrl.startsWith("http")) {
+    try {
+      const url = new URL(audioUrl);
+      const filename = path.basename(url.pathname);
+      const localPath = path.join(uploadsDir, filename);
+
+      if (!fs.existsSync(localPath)) {
+        // Download
+        const res = await fetch(audioUrl);
+        if (!res.ok) return null;
+        const arrayBuffer = await res.arrayBuffer();
+        fs.writeFileSync(localPath, Buffer.from(arrayBuffer));
+      }
+      return localPath;
+    } catch (e) {
+      console.error("Failed to download remote audio:", e);
+      return null;
+    }
+  }
+
   const normalized = audioUrl.replace(/^\/+/, "");
   const resolved = path.resolve(process.cwd(), "public", normalized);
   const uploadsBase = path.resolve(process.cwd(), "public", "uploads");
@@ -533,7 +557,20 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const filename = safeName || `take_${Date.now()}_${Math.random().toString(36).slice(2)}.wav`;
         const filePath = path.join(uploadsDir, filename);
         fs.writeFileSync(filePath, req.file.buffer);
-        audioUrl = `/uploads/${filename}`;
+
+        try {
+          // Upload to Supabase Storage "uploads" bucket
+          const supabaseUrl = await uploadFile("uploads", filename, req.file.buffer, "audio/wav");
+          if (supabaseUrl) {
+            audioUrl = supabaseUrl;
+          } else {
+            audioUrl = `/uploads/${filename}`;
+          }
+        } catch (e) {
+          console.error("Failed to upload to Supabase:", e);
+          // Fallback to local
+          audioUrl = `/uploads/${filename}`;
+        }
       }
 
       if (!audioUrl) {
@@ -642,7 +679,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           return res.status(403).json({ message: "Acesso negado" });
         }
       }
-      const filePath = safeAudioPath(take.audioUrl);
+      const filePath = await ensureAudioFile(take.audioUrl);
       if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ message: "Arquivo nao encontrado" });
       const filename = path.basename(take.audioUrl);
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
@@ -679,7 +716,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.setHeader("Content-Type", "application/zip");
       archive.pipe(res);
       for (const take of takeList) {
-        const filePath = safeAudioPath(take.audioUrl);
+        const filePath = await ensureAudioFile(take.audioUrl);
         if (!filePath || !fs.existsSync(filePath)) continue;
         const filename = path.basename(take.audioUrl);
         archive.file(filePath, { name: filename });
@@ -710,7 +747,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.setHeader("Content-Type", "application/zip");
       archive.pipe(res);
       for (const take of takeList) {
-        const filePath = safeAudioPath(take.audioUrl);
+        const filePath = await ensureAudioFile(take.audioUrl);
         if (!filePath || !fs.existsSync(filePath)) continue;
         const filename = path.basename(take.audioUrl);
         archive.file(filePath, { name: filename });
@@ -741,7 +778,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.setHeader("Content-Type", "application/zip");
       archive.pipe(res);
       for (const take of takeList) {
-        const filePath = safeAudioPath(take.audioUrl);
+        const filePath = await ensureAudioFile(take.audioUrl);
         if (!filePath || !fs.existsSync(filePath)) continue;
         const filename = path.basename(take.audioUrl);
         const sessionFolder = (take.sessionTitle || "Sessao").replace(/[^a-zA-Z0-9_\-]/g, "_");
@@ -1214,8 +1251,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const { originalFilename, retakeFilename } = req.body;
       if (!originalFilename || !retakeFilename) return res.status(400).json({ message: "Missing filenames" });
 
-      const originalPath = path.join(uploadsDir, originalFilename);
-      const retakePath = path.join(uploadsDir, retakeFilename);
+      const { data: { publicUrl: originalUrl } } = supabase.storage.from("uploads").getPublicUrl(originalFilename);
+      const { data: { publicUrl: retakeUrl } } = supabase.storage.from("uploads").getPublicUrl(retakeFilename);
+      
+      const originalPath = await ensureAudioFile(originalUrl) || path.join(uploadsDir, originalFilename);
+      const retakePath = await ensureAudioFile(retakeUrl) || path.join(uploadsDir, retakeFilename);
 
       if (!fs.existsSync(originalPath) || !fs.existsSync(retakePath)) {
         return res.status(404).json({ message: "Files not found" });
@@ -1257,13 +1297,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
 
       // Map to full paths
-      const processList = files.map((f: any) => {
-          const fullPath = path.join(uploadsDir, f.filename);
+      const processList = (await Promise.all(files.map(async (f: any) => {
+          const { data: { publicUrl } } = supabase.storage.from("uploads").getPublicUrl(f.filename);
+          const fullPath = await ensureAudioFile(publicUrl) || path.join(uploadsDir, f.filename);
           return {
               path: fullPath,
               startTimeMs: f.startTimeMs
           };
-      }).filter((item: any) => fs.existsSync(item.path));
+      }))).filter((item: any) => fs.existsSync(item.path));
 
       if (processList.length === 0) {
           return res.status(404).json({ message: "Files not found" });
@@ -1378,10 +1419,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       string,
       { characterName: string; voiceActorName: string; items: Array<{ path: string; startTimeMs: number }> }
     >();
-    best.forEach((t) => {
+    for (const t of Array.from(best.values())) {
       const startTimeMs = startTimesMs[t.lineIndex] ?? 0;
-      const filePath = safeAudioPath(t.audioUrl);
-      if (!filePath || !fs.existsSync(filePath)) return;
+      const filePath = await ensureAudioFile(t.audioUrl);
+      if (!filePath || !fs.existsSync(filePath)) continue;
       const k = `${t.characterId}::${t.voiceActorId}`;
       if (!groups.has(k)) {
         groups.set(k, {
@@ -1391,7 +1432,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         });
       }
       groups.get(k)!.items.push({ path: filePath, startTimeMs });
-    });
+    }
 
     const tracks: Array<{ characterName: string; voiceActorName: string; outputUrl: string; filename: string }> = [];
     groups.forEach((g) => {
