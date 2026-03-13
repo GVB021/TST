@@ -80,8 +80,7 @@ export class AudioProcessor {
   ): Promise<ProcessingResult> {
     // ... (mesmo código do processRetake) ...
     return new Promise((resolve, reject) => {
-      const venvPython = path.join(process.cwd(), ".venv", "bin", "python3");
-      const pythonCmd = fs.existsSync(venvPython) ? venvPython : (process.platform === "win32" ? "python" : "python3");
+      const pythonCmd = process.platform === "win32" ? "python" : "python3";
       
       const args = [
         this.scriptPath,
@@ -117,8 +116,7 @@ export class AudioProcessor {
     fs.writeFileSync(tempJsonPath, JSON.stringify(files));
 
     return new Promise((resolve, reject) => {
-        const venvPython = path.join(process.cwd(), ".venv", "bin", "python3");
-        const pythonCmd = fs.existsSync(venvPython) ? venvPython : (process.platform === "win32" ? "python" : "python3");
+        const pythonCmd = process.platform === "win32" ? "python" : "python3";
         const args = [
             this.bounceScriptPath,
             `"${tempJsonPath}"`,
