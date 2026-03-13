@@ -10,7 +10,7 @@ import { Loader2 } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 
-const NotFound = lazy(() => import("@/pages/not-found"));
+const Landing = lazy(() => import("@/pages/landing"));
 const Login = lazy(() => import("@/pages/login"));
 const SecretariaLogin = lazy(() => import("@/pages/secretaria-login"));
 const StudioSelect = lazy(() => import("@/pages/studio-select"));
@@ -123,7 +123,7 @@ function Router() {
       </div>
     }>
       <Switch>
-        <Route path="/" component={() => <Redirect to="/studios" />} />
+        <Route path="/" component={Landing} />
         <Route path="/login" component={Login} />
         <Route path="/secretaria/login" component={SecretariaLogin} />
         <Route path="/studios" component={StudioSelectRoute} />
@@ -168,7 +168,9 @@ function Router() {
           {params => <ProtectedRoute component={RecordingRoom} params={params} />}
         </Route>
 
-        <Route component={NotFound} />
+        <Route path="/hubdub/:rest*">{() => <Redirect to="/" replace />}</Route>
+        <Route path="/thehub/:rest*">{() => <Redirect to="/" replace />}</Route>
+        <Route path="/:rest*">{() => <Redirect to="/" replace />}</Route>
       </Switch>
     </Suspense>
   );

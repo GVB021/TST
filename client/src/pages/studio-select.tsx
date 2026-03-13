@@ -73,7 +73,7 @@ export default function StudioSelect() {
             {studios.map((studio) => (
               <Link
                 key={studio.id}
-                href={`/studio/${studio.id}/dashboard`}
+                  href={`/studio/${studio.id}/dashboard`}
                 className="block group"
                 data-testid={`card-studio-${studio.id}`}
               >

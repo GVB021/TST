@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { AudioWaveform, Download, Loader2, Music4 } from "lucide-react";
+import { AudioWaveform, Download, Loader2, Music4, UploadCloud, Wand2 } from "lucide-react";
 import { useProductions } from "@/hooks/use-productions";
 import { authFetch } from "@/lib/auth-fetch";
 import { useToast } from "@/hooks/use-toast";
@@ -55,6 +55,7 @@ function qualityBadgeStyles(score: number | null | undefined) {
 export default function Daw({ studioId }: { studioId: string }) {
   const { data: productions, isLoading: isProductionsLoading } = useProductions(studioId);
   const [productionId, setProductionId] = useState("");
+  const [originalFile, setOriginalFile] = useState<File | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -68,6 +69,51 @@ export default function Daw({ studioId }: { studioId: string }) {
     queryFn: () => authFetch(`/api/productions/${productionId}/timeline`),
     enabled: Boolean(productionId),
     refetchInterval: 15000,
+  });
+
+  const originalAudioQuery = useQuery<{ filename: string; url: string; uploadedAt: number } | null>({
+    queryKey: ["/api/productions", productionId, "original-audio"],
+    queryFn: () => authFetch(`/api/productions/${productionId}/original-audio`),
+    enabled: Boolean(productionId),
+    refetchInterval: 15000,
+  });
+
+  const uploadOriginalMutation = useMutation({
+    mutationFn: async () => {
+      if (!originalFile) throw new Error("Selecione um audio original");
+      const form = new FormData();
+      form.append("file", originalFile);
+      return authFetch(`/api/productions/${productionId}/original-audio`, { method: "POST", body: form });
+    },
+    onSuccess: () => {
+      toast({ title: "Audio original enviado" });
+      originalAudioQuery.refetch();
+    },
+    onError: (error: any) => {
+      toast({ title: "Falha no upload", description: error?.message || "Nao foi possivel enviar o audio", variant: "destructive" });
+    },
+  });
+
+  const autoPlaceMutation = useMutation({
+    mutationFn: async () => authFetch(`/api/productions/${productionId}/auto-place`, { method: "POST" }),
+    onSuccess: (data: any) => {
+      toast({ title: "Auto-posicionamento concluido", description: `${data?.updated || 0} takes atualizados` });
+      timelineQuery.refetch();
+    },
+    onError: (error: any) => {
+      toast({ title: "Falha ao auto-posicionar", description: error?.message || "Nao foi possivel atualizar os takes", variant: "destructive" });
+    },
+  });
+
+  const smartAlignMutation = useMutation({
+    mutationFn: async () => authFetch(`/api/productions/${productionId}/smart-align`, { method: "POST" }),
+    onSuccess: (data: any) => {
+      toast({ title: "Alinhamento concluido", description: `${data?.updated || 0}/${data?.total || 0} takes alinhados` });
+      timelineQuery.refetch();
+    },
+    onError: (error: any) => {
+      toast({ title: "Falha no alinhamento", description: error?.message || "Nao foi possivel alinhar os takes", variant: "destructive" });
+    },
   });
 
   const bounceMutation = useMutation({
@@ -116,7 +162,7 @@ export default function Daw({ studioId }: { studioId: string }) {
         title="Estúdio Virtual"
         subtitle="Timeline ativa de takes por personagem e ator com bounce server-side."
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Select value={productionId} onValueChange={setProductionId}>
               <SelectTrigger className="w-[240px] h-9 bg-background/60 border-white/10">
                 <SelectValue placeholder={isProductionsLoading ? "Carregando..." : "Selecione a producao"} />
@@ -129,6 +175,56 @@ export default function Daw({ studioId }: { studioId: string }) {
                 ))}
               </SelectContent>
             </Select>
+
+            <label className="inline-flex items-center gap-2 h-9 px-3 rounded-md border border-white/15 text-white/80 hover:text-white hover:border-white/25 transition-colors cursor-pointer">
+              <UploadCloud className="h-4 w-4" />
+              <span className="text-xs font-medium">
+                {originalAudioQuery.data?.filename ? "Original OK" : "Upload Original"}
+              </span>
+              <input
+                type="file"
+                accept="audio/*"
+                className="hidden"
+                onChange={(e) => {
+                  const next = e.target.files?.[0] || null;
+                  setOriginalFile(next);
+                }}
+              />
+            </label>
+
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2 border-white/15"
+              disabled={!productionId || !originalFile || uploadOriginalMutation.isPending}
+              onClick={() => uploadOriginalMutation.mutate()}
+            >
+              {uploadOriginalMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UploadCloud className="h-3.5 w-3.5" />}
+              Enviar
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2 border-white/15"
+              disabled={!productionId || autoPlaceMutation.isPending}
+              onClick={() => autoPlaceMutation.mutate()}
+            >
+              {autoPlaceMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+              Auto-Posicionar
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2 border-white/15"
+              disabled={!productionId || smartAlignMutation.isPending || !originalAudioQuery.data}
+              onClick={() => smartAlignMutation.mutate()}
+            >
+              {smartAlignMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AudioWaveform className="h-3.5 w-3.5" />}
+              Escutar Inteligente
+            </Button>
+
             <Button
               size="sm"
               variant="outline"
@@ -152,18 +248,25 @@ export default function Daw({ studioId }: { studioId: string }) {
         }
       />
 
-      <div className="rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md overflow-hidden">
-        <div className="grid grid-cols-[280px_1fr] border-b border-white/10">
-          <div className="px-5 py-3 text-xs uppercase tracking-[0.18em] text-white/45">Tracks</div>
+      <div className="relative rounded-2xl border border-border/70 bg-card/84 backdrop-blur-xl overflow-hidden shadow-[var(--elevate-1)]">
+        <img
+          src="https://images.unsplash.com/photo-1470229538611-16ba8c7ffbd7?auto=format&fit=crop&w=1800&q=80"
+          alt="Audio timeline background"
+          className="absolute inset-0 h-full w-full object-cover opacity-[0.08] pointer-events-none"
+          loading="lazy"
+          decoding="async"
+        />
+        <div className="grid grid-cols-[280px_1fr] border-b border-border/60 relative">
+          <div className="px-5 py-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">Tracks</div>
           <div className="overflow-x-auto">
             <div className="relative h-12" style={{ width: timelineWidth }}>
               {timeMarkers.map((second) => (
                 <div
                   key={second}
-                  className="absolute top-0 bottom-0 border-l border-white/10"
+                  className="absolute top-0 bottom-0 border-l border-border/60"
                   style={{ left: second * pixelsPerSecond }}
                 >
-                  <span className="absolute top-2 left-2 text-[11px] font-mono text-white/50">
+                  <span className="absolute top-2 left-2 text-[11px] font-mono text-muted-foreground">
                     {formatTimecode(second)}
                   </span>
                 </div>
@@ -173,29 +276,29 @@ export default function Daw({ studioId }: { studioId: string }) {
         </div>
 
         {timelineQuery.isLoading ? (
-          <div className="h-40 flex items-center justify-center text-white/60">
+          <div className="h-40 flex items-center justify-center text-muted-foreground relative">
             <Loader2 className="h-5 w-5 animate-spin mr-2" />
             Carregando timeline...
           </div>
         ) : tracks.length === 0 ? (
-          <div className="h-40 flex flex-col items-center justify-center text-white/40 gap-2">
+          <div className="h-40 flex flex-col items-center justify-center text-muted-foreground gap-2 relative">
             <Music4 className="h-6 w-6" />
             Nenhum take ativo encontrado para esta producao.
           </div>
         ) : (
           <div className="max-h-[68vh] overflow-auto custom-scrollbar">
             {tracks.map((track) => (
-              <div key={track.id} className="grid grid-cols-[280px_1fr] border-b border-white/5 min-h-[64px]">
+              <div key={track.id} className="grid grid-cols-[280px_1fr] border-b border-border/50 min-h-[64px] vhub-fade-in">
                 <div className="px-5 py-4 flex items-center gap-3">
                   <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: track.color || "#60A5FA" }} />
-                  <span className="text-sm font-medium text-white/85 truncate">{track.name}</span>
+                  <span className="text-sm font-medium text-foreground truncate">{track.name}</span>
                 </div>
                 <div className="overflow-x-auto">
                   <div className="relative h-[64px]" style={{ width: timelineWidth }}>
                     {timeMarkers.map((second) => (
                       <div
                         key={`${track.id}-${second}`}
-                        className="absolute top-0 bottom-0 border-l border-white/[0.05]"
+                        className="absolute top-0 bottom-0 border-l border-border/40"
                         style={{ left: second * pixelsPerSecond }}
                       />
                     ))}
@@ -210,8 +313,8 @@ export default function Daw({ studioId }: { studioId: string }) {
                           left: take.startTimeSeconds * pixelsPerSecond,
                           width: Math.max(36, take.durationSeconds * pixelsPerSecond),
                           borderColor: `${track.color || "#60A5FA"}66`,
-                          backgroundColor: `${track.color || "#60A5FA"}2E`,
-                          color: "#E5E7EB",
+                          backgroundColor: `${track.color || "#60A5FA"}22`,
+                          color: "hsl(var(--foreground))",
                         }}
                         title={`${track.name} • ${formatTimecode(take.startTimeSeconds)} • ${take.durationSeconds.toFixed(2)}s`}
                       >

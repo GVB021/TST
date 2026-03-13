@@ -9,7 +9,7 @@ interface PageSectionProps {
 }
 export function PageSection({ children, className }: PageSectionProps) {
   return (
-    <div className={cn("space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500", className)}>
+    <div className={cn("space-y-8 vhub-slide-in", className)}>
       {children}
     </div>
   );
@@ -25,15 +25,15 @@ interface PageHeaderProps {
 }
 export function PageHeader({ label, title, subtitle, action, className }: PageHeaderProps) {
   return (
-    <div className={cn("flex flex-col sm:flex-row sm:items-start justify-between gap-4", className)}>
+    <div className={cn("flex flex-col sm:flex-row sm:items-start justify-between gap-4 rounded-2xl border border-border/60 bg-card/72 backdrop-blur-xl p-5 shadow-[var(--elevate-1)]", className)}>
       <div className="space-y-1">
         {label && (
-          <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary/90">
             {label}
           </p>
         )}
         <h1 className="text-3xl font-semibold tracking-tight text-foreground">{title}</h1>
-        {subtitle && <p className="text-base text-muted-foreground max-w-2xl">{subtitle}</p>}
+        {subtitle && <p className="text-base text-muted-foreground/95 max-w-2xl">{subtitle}</p>}
       </div>
       {action && <div className="shrink-0 flex items-center gap-2">{action}</div>}
     </div>
@@ -51,10 +51,10 @@ interface StatCardProps {
 }
 export function StatCard({ label, value, icon, valueClassName, className, description }: StatCardProps) {
   return (
-    <div className={cn("rounded-2xl border border-border/70 bg-card/75 backdrop-blur-sm text-card-foreground shadow-sm p-6 transition-colors hover:bg-card", className)}>
+    <div className={cn("vhub-panel vhub-hover-lift text-card-foreground p-6", className)}>
       <div className="flex items-center justify-between space-y-0 pb-2">
         <p className="text-sm font-medium text-muted-foreground">{label}</p>
-        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+        <div className="h-8 w-8 rounded-full bg-primary/12 border border-primary/20 flex items-center justify-center text-primary">
           {icon}
         </div>
       </div>
@@ -78,8 +78,8 @@ interface EmptyStateProps {
 }
 export function EmptyState({ icon, title, description, action, className }: EmptyStateProps) {
   return (
-    <div className={cn("rounded-2xl border border-border/70 bg-card/65 backdrop-blur-sm flex flex-col items-center justify-center py-16 px-8 text-center", className)}>
-      <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4 text-muted-foreground">
+    <div className={cn("vhub-panel flex flex-col items-center justify-center py-16 px-8 text-center", className)}>
+      <div className="w-12 h-12 rounded-full bg-muted/80 border border-border/70 flex items-center justify-center mb-4 text-muted-foreground">
         {icon}
       </div>
       <h3 className="font-semibold text-foreground text-lg mb-1">{title}</h3>
@@ -169,7 +169,7 @@ export function GridSkeleton({ count = 6, className }: { count?: number; classNa
   return (
     <div className={cn("grid gap-4 sm:grid-cols-2 lg:grid-cols-3", className)}>
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="rounded-2xl border border-border/70 bg-card/60 h-[120px] animate-pulse" />
+        <div key={i} className="rounded-2xl border border-border/70 bg-card/60 h-[120px] vhub-skeleton-shimmer" />
       ))}
     </div>
   );

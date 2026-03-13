@@ -44,7 +44,7 @@ export const AppSidebar = memo(function AppSidebar({ studioId }: AppSidebarProps
       items.push({ title: pt.nav.productions, url: `/studio/${studioId}/productions`, icon: Film });
     }
     items.push({ title: pt.nav.sessions, url: `/studio/${studioId}/sessions`, icon: Calendar });
-    items.push({ title: "Estúdio Virtual", url: "/daw", icon: Activity });
+    items.push({ title: "HUB ALIGN", url: "/daw", icon: Activity });
     if (isStudioAdmin) {
       items.push({ title: pt.nav.takes, url: `/studio/${studioId}/takes`, icon: Music });
     }

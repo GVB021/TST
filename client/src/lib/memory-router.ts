@@ -1,8 +1,13 @@
 import { memoryLocation } from "wouter/memory-location";
 
-const initialFull = window.location.pathname + window.location.search;
+const getInitialPath = () => {
+  const path = window.location.pathname + window.location.search;
+  return path || "/";
+};
 
-const { hook: _baseHook, navigate: _baseNavigate } = memoryLocation({ path: initialFull || "/" });
+const { hook: _baseHook, navigate: _baseNavigate } = memoryLocation({ 
+  path: getInitialPath()
+});
 
 export const memoryNavigate = (to: string, opts?: any) => {
   _baseNavigate(to, opts);

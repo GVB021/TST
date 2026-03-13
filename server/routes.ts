@@ -10,7 +10,7 @@ import { execFile } from "child_process";
 import { storage } from "./storage";
 import { z } from "zod";
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import {
   productions, characters, takes, users, studios, sessions, studioMemberships, userStudioRoles,
   type Production, type Session,
@@ -29,6 +29,35 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 
 // Ensure uploads directory exists
 const uploadsDir = path.join(process.cwd(), "public", "uploads");
 fs.mkdirSync(uploadsDir, { recursive: true });
+const originalAudioMapPath = path.join(uploadsDir, "original-audio-map.json");
+
+function readOriginalAudioMap(): Record<string, { filename: string; url: string; uploadedAt: number }> {
+  try {
+    if (!fs.existsSync(originalAudioMapPath)) return {};
+    const raw = fs.readFileSync(originalAudioMapPath, "utf-8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeOriginalAudioMap(map: Record<string, { filename: string; url: string; uploadedAt: number }>) {
+  fs.writeFileSync(originalAudioMapPath, JSON.stringify(map), "utf-8");
+}
+
+function getOriginalAudioForProduction(productionId: string) {
+  const map = readOriginalAudioMap();
+  const entry = map[productionId];
+  if (!entry?.filename) return null;
+  const localPath = path.join(uploadsDir, entry.filename);
+  if (!fs.existsSync(localPath)) {
+    delete map[productionId];
+    writeOriginalAudioMap(map);
+    return null;
+  }
+  return { ...entry, localPath };
+}
 
 async function ensureAudioFile(audioUrl: string): Promise<string | null> {
   if (!audioUrl) return null;
@@ -359,25 +388,35 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/studios/:studioId/productions", requireAuth, requireStudioRole("studio_admin"), async (req, res) => {
     try {
-      // Mock automatic poster generation if not provided
-      let posterUrl = req.body.posterUrl;
-      if (!posterUrl && req.body.name) {
-        // Simple mock: try to use a placeholder service with the movie name
-        // In a real app, this would call TMDB/OMDB API
-        const safeName = encodeURIComponent(req.body.name);
-        // Using a stylish placeholder service that generates text images
+      const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+      if (!name) {
+        return res.status(400).json({ message: "Nome da producao obrigatorio" });
+      }
+
+      let posterUrl = typeof req.body?.posterUrl === "string" ? req.body.posterUrl : "";
+      if (!posterUrl) {
+        const safeName = encodeURIComponent(name);
         posterUrl = `https://placehold.co/600x900/1a1a1a/FFF?text=${safeName}`;
       }
 
-      const input = insertProductionSchema.parse({ 
-        ...req.body, 
+      const input = insertProductionSchema.parse({
         studioId: req.params.studioId,
-        posterUrl
+        name,
+        ...(typeof req.body?.description === "string" ? { description: req.body.description } : {}),
+        ...(typeof req.body?.videoUrl === "string" ? { videoUrl: req.body.videoUrl } : {}),
+        ...(typeof req.body?.scriptJson === "string" ? { scriptJson: req.body.scriptJson } : {}),
+        ...(typeof req.body?.status === "string" ? { status: req.body.status } : {}),
+        posterUrl,
       });
+
       const prod = await storage.createProduction(input);
       res.status(201).json(prod);
-    } catch (err) {
-      res.status(400).json({ message: "Dados invalidos" });
+    } catch (err: any) {
+      const zodIssues = Array.isArray(err?.issues)
+        ? err.issues.map((issue: any) => `${issue.path?.join(".") || "campo"}: ${issue.message}`).join("; ")
+        : "";
+      const message = zodIssues || err?.message || "Dados invalidos";
+      res.status(400).json({ message });
     }
   });
 
@@ -1272,6 +1311,166 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
     } catch (e: any) {
       res.status(500).json({ message: e?.message || "Falha ao carregar timeline" });
+    }
+  });
+
+  app.get("/api/productions/:productionId/original-audio", requireAuth, async (req, res) => {
+    const production = await verifyProductionAccess(req, res, req.params.productionId);
+    if (!production) return;
+    const entry = getOriginalAudioForProduction(production.id);
+    res.status(200).json(entry ? { filename: entry.filename, url: entry.url, uploadedAt: entry.uploadedAt } : null);
+  });
+
+  app.post("/api/productions/:productionId/original-audio", requireAuth, upload.single("file"), async (req, res) => {
+    const production = await verifyProductionAccess(req, res, req.params.productionId);
+    if (!production) return;
+    const file = (req as any).file as Express.Multer.File | undefined;
+    if (!file?.buffer) return res.status(400).json({ message: "Arquivo de audio obrigatorio" });
+
+    const ext = path.extname(file.originalname || "").toLowerCase() || ".wav";
+    const safeExt = [".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac"].includes(ext) ? ext : ".wav";
+    const filename = `original_${production.id}_${Date.now()}${safeExt}`;
+    const fullPath = path.join(uploadsDir, filename);
+    fs.writeFileSync(fullPath, file.buffer);
+
+    const url = `/uploads/${filename}`;
+    const map = readOriginalAudioMap();
+    map[production.id] = { filename, url, uploadedAt: Date.now() };
+    writeOriginalAudioMap(map);
+
+    res.status(200).json({ filename, url });
+  });
+
+  function parseScriptJsonStarts(scriptJson: string | null) {
+    if (!scriptJson) return [];
+    try {
+      const parsed = JSON.parse(scriptJson);
+      const rawLines: any[] = Array.isArray(parsed) ? parsed : (parsed?.lines && Array.isArray(parsed.lines) ? parsed.lines : []);
+      const toSeconds = (value: any) => {
+        if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, value);
+        const str = String(value || "00:00:00").trim();
+        const normalized = str.replace(/-/g, ":");
+        const parts = normalized.split(":");
+        if (parts.length >= 3) {
+          const h = Number(parts[0]) || 0;
+          const m = Number(parts[1]) || 0;
+          const s = Number(parts.slice(2).join(":")) || 0;
+          return Math.max(0, h * 3600 + m * 60 + s);
+        }
+        const asNum = Number(normalized);
+        return Number.isFinite(asNum) ? Math.max(0, asNum) : 0;
+      };
+      return rawLines.map((line, index) => ({
+        index,
+        startSeconds: toSeconds(line?.start ?? line?.tempo ?? line?.timecode ?? line?.tc ?? "00:00:00"),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  app.post("/api/productions/:productionId/auto-place", requireAuth, async (req, res) => {
+    try {
+      const production = await verifyProductionAccess(req, res, req.params.productionId);
+      if (!production) return;
+      const starts = parseScriptJsonStarts(production.scriptJson);
+      if (!starts.length) return res.status(400).json({ message: "scriptJson ausente ou invalido" });
+
+      const sessionRows = await db.select({ id: sessions.id }).from(sessions).where(eq(sessions.productionId, production.id));
+      const sessionIds = sessionRows.map((row) => row.id);
+      if (!sessionIds.length) return res.status(200).json({ updated: 0 });
+
+      const takeRows = await db
+        .select({ id: takes.id, lineIndex: takes.lineIndex })
+        .from(takes)
+        .where(inArray(takes.sessionId, sessionIds));
+
+      const startsByIndex = new Map(starts.map((s) => [s.index, s.startSeconds]));
+      const updates = takeRows
+        .map((row) => ({ id: row.id, start: startsByIndex.get(row.lineIndex) }))
+        .filter((row): row is { id: string; start: number } => typeof row.start === "number");
+
+      await Promise.all(updates.map((u) => db.update(takes).set({ startTimeSeconds: u.start }).where(eq(takes.id, u.id))));
+      res.status(200).json({ updated: updates.length });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || "Falha ao auto-posicionar takes" });
+    }
+  });
+
+  app.post("/api/productions/:productionId/smart-align", requireAuth, async (req, res) => {
+    try {
+      const production = await verifyProductionAccess(req, res, req.params.productionId);
+      if (!production) return;
+
+      const entry = getOriginalAudioForProduction(production.id);
+      if (!entry) return res.status(400).json({ message: "Audio original nao enviado" });
+
+      const starts = parseScriptJsonStarts(production.scriptJson);
+      const startsByIndex = new Map(starts.map((s) => [s.index, s.startSeconds]));
+
+      const activeTakes = await storage.getActiveTakesForProduction(production.id);
+      if (!activeTakes.length) return res.status(200).json({ updated: 0 });
+
+      const withLocal = await Promise.all(activeTakes.map(async (take) => {
+        const localPath = await ensureAudioFile(take.audioUrl);
+        return localPath ? { ...take, localPath } : null;
+      }));
+      const available = withLocal.filter(Boolean) as Array<typeof activeTakes[number] & { localPath: string }>;
+      if (!available.length) return res.status(400).json({ message: "Nao foi possivel baixar takes" });
+
+      const payload = {
+        originalPath: entry.localPath,
+        takes: available.map((t) => ({
+          id: t.id,
+          path: t.localPath,
+          hintMs: Math.round((startsByIndex.get(t.lineIndex) ?? t.startTimeSeconds ?? 0) * 1000),
+        })),
+      };
+
+      const pythonCmd = process.platform === "win32" ? "python" : "python3";
+      const scriptPath = path.join(process.cwd(), "server", "scripts", "process_audio.py");
+      const encodedPayload = Buffer.from(JSON.stringify(payload)).toString("base64");
+
+      const result: any = await new Promise((resolve, reject) => {
+        execFile(
+          pythonCmd,
+          [scriptPath, "align_batch", encodedPayload],
+          { timeout: 300000, maxBuffer: 10 * 1024 * 1024 },
+          (error, stdout, stderr) => {
+            if (error) return reject(error);
+            const lines = stdout.trim().split("\n").filter(Boolean);
+            const lastLine = lines[lines.length - 1];
+            if (!lastLine) return reject(new Error(stderr || "Sem resposta do script"));
+            try {
+              resolve(JSON.parse(lastLine));
+            } catch {
+              reject(new Error(stderr || "Resposta invalida do script"));
+            }
+          }
+        );
+      });
+
+      if (result?.status !== "success" || !Array.isArray(result?.results)) {
+        return res.status(500).json({ message: result?.message || "Falha no alinhamento" });
+      }
+
+      const updates = result.results
+        .filter((r: any) => r?.status === "success" && typeof r?.id === "string" && r?.alignment)
+        .map((r: any) => ({
+          id: r.id as string,
+          start: Number(r.alignment.offset_ms || 0) / 1000,
+          duration: Number(r.alignment.duration_ms || 0) / 1000,
+        }))
+        .filter((u: any) => Number.isFinite(u.start) && Number.isFinite(u.duration) && u.duration > 0);
+
+      await Promise.all(updates.map((u: any) => db.update(takes).set({ startTimeSeconds: u.start, durationSeconds: u.duration }).where(eq(takes.id, u.id))));
+
+      res.status(200).json({ updated: updates.length, total: available.length });
+    } catch (e: any) {
+      if (e?.killed || String(e?.message || "").includes("timed out")) {
+        return res.status(504).json({ message: "Alinhamento demorou mais que o permitido. Tente novamente." });
+      }
+      res.status(500).json({ message: e?.message || "Falha no alinhamento inteligente" });
     }
   });
 

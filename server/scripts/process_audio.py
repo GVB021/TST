@@ -66,6 +66,60 @@ def process_audio(original_path, retake_path, output_path, start_time_ms=None):
     except Exception as error:
         return {"status": "error", "message": str(error)}
 
+def align_batch(payload):
+    try:
+        original_path = payload.get("originalPath")
+        takes_payload = payload.get("takes", [])
+        if not original_path or not isinstance(takes_payload, list):
+            return {"status": "error", "message": "Payload invalido"}
+
+        y_orig, sr = librosa.load(original_path, sr=DEFAULT_SR)
+        results = []
+
+        for item in takes_payload:
+            take_id = item.get("id")
+            take_path = item.get("path")
+            hint_ms = float(item.get("hintMs") or 0)
+
+            if not take_id or not take_path:
+                results.append({"status": "error", "id": take_id, "message": "Take invalido"})
+                continue
+
+            try:
+                y_take, _ = librosa.load(take_path, sr=sr)
+                y_take_trimmed, _ = librosa.effects.trim(y_take, top_db=SILENCE_TOP_DB)
+                if len(y_take_trimmed) < sr * 0.1:
+                    results.append({"status": "error", "id": take_id, "message": "Take muito curto ou vazio"})
+                    continue
+
+                start_sample = int((hint_ms / 1000) * sr)
+                search_window = sr * 2
+                search_start = max(0, start_sample - search_window)
+                search_end = min(len(y_orig), start_sample + len(y_take_trimmed) + search_window)
+                y_orig_segment = y_orig[search_start:search_end]
+                if len(y_orig_segment) <= len(y_take_trimmed):
+                    results.append({"status": "error", "id": take_id, "message": "Janela de busca insuficiente"})
+                    continue
+
+                correlation = signal.correlate(y_orig_segment, y_take_trimmed, mode="valid", method="fft")
+                peak = int(np.argmax(correlation))
+                best_offset = search_start + peak
+
+                results.append({
+                    "status": "success",
+                    "id": take_id,
+                    "alignment": {
+                        "offset_ms": (best_offset / sr) * 1000,
+                        "duration_ms": (len(y_take_trimmed) / sr) * 1000,
+                    }
+                })
+            except Exception as error:
+                results.append({"status": "error", "id": take_id, "message": str(error)})
+
+        return {"status": "success", "results": results}
+    except Exception as error:
+        return {"status": "error", "message": str(error)}
+
 def sanitize_name(value):
     return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in value).strip("_") or "track"
 
@@ -311,6 +365,11 @@ if __name__ == "__main__":
         if len(sys.argv) >= 3 and sys.argv[1] == "bounce":
             payload = parse_bounce_payload(sys.argv[2])
             print(json.dumps(execute_bounce(payload)))
+            sys.exit(0)
+
+        if len(sys.argv) >= 3 and sys.argv[1] == "align_batch":
+            payload = parse_bounce_payload(sys.argv[2])
+            print(json.dumps(align_batch(payload)))
             sys.exit(0)
 
         if len(sys.argv) < 4:

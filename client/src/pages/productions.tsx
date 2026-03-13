@@ -54,7 +54,7 @@ const Productions = memo(function Productions({ studioId }: { studioId: string }
 
   const handleCreate = async () => {
     if (!formData.name) return;
-    await createProd.mutateAsync({ ...formData, status: "planned", scriptJson: undefined });
+    await createProd.mutateAsync({ ...formData, status: "planned" });
     setIsOpen(false);
     setFormData({ name: "", description: "", videoUrl: "" });
     toast({ title: "Producao criada" });

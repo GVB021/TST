@@ -4,22 +4,20 @@ import * as schema from "@shared/schema";
 
 const { Pool } = pg;
 
-const connectionConfig = process.env.DATABASE_URL
-  ? { connectionString: process.env.DATABASE_URL }
-  : {
-      host: "aws-1-us-east-2.pooler.supabase.com",
-      port: 6543,
-      user: "postgres.wsyjokgqbugohpahblfq",
-      password: "hubdubsenhadadata",
-      database: "postgres",
-      ssl: {
-        rejectUnauthorized: false
-      }
-    };
+const rawDbUrl = process.env.DATABASE_URL;
+const sslMode = (process.env.PGSSLMODE || "").toLowerCase();
+const shouldUseSsl = sslMode === "disable"
+  ? false
+  : (process.env.DB_SSL === "false" ? false : true);
 
-if (!process.env.DATABASE_URL) {
-  console.warn("DATABASE_URL not set. Using fallback hardcoded credentials.");
+if (!rawDbUrl) {
+  throw new Error("DATABASE_URL is required");
 }
+
+const connectionConfig: pg.PoolConfig = {
+  connectionString: rawDbUrl,
+  ssl: shouldUseSsl ? { rejectUnauthorized: false } : false,
+};
 
 export const pool = new Pool(connectionConfig);
 export const db = drizzle(pool, { schema });

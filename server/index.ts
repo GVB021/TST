@@ -5,6 +5,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { setupVideoSync } from "./video-sync";
+import { pool } from "./db";
 import path from "path";
 
 const app = express();
@@ -66,7 +67,31 @@ app.use((req, res, next) => {
   next();
 });
 
+async function ensureProductionsTableSchema() {
+  await pool.query(`
+    ALTER TABLE IF EXISTS productions
+      ADD COLUMN IF NOT EXISTS description text,
+      ADD COLUMN IF NOT EXISTS video_url text,
+      ADD COLUMN IF NOT EXISTS poster_url text,
+      ADD COLUMN IF NOT EXISTS script_json text,
+      ADD COLUMN IF NOT EXISTS status text,
+      ADD COLUMN IF NOT EXISTS created_at timestamp DEFAULT now();
+  `);
+
+  await pool.query(`
+    UPDATE productions
+    SET status = 'planned'
+    WHERE status IS NULL;
+  `);
+
+  await pool.query(`
+    ALTER TABLE productions
+      ALTER COLUMN status SET DEFAULT 'planned';
+  `);
+}
+
 (async () => {
+  await ensureProductionsTableSchema();
   await setupAuth(app);
   registerAuthRoutes(app);
   await registerRoutes(httpServer, app);
