@@ -1,118 +1,230 @@
 import sys
 import os
 import json
+import base64
+import time
+import tempfile
+import urllib.parse
+import urllib.request
+import zipfile
 import librosa
 import numpy as np
 import soundfile as sf
 from scipy import signal
+from pydub import AudioSegment
 
-# Configurações padrão
 DEFAULT_SR = 44100
-SILENCE_TOP_DB = 30  # Ajustável conforme o ambiente
+SILENCE_TOP_DB = 30
 
 def process_audio(original_path, retake_path, output_path, start_time_ms=None):
-    """
-    Processa o áudio substituindo o trecho original pelo retake com alinhamento inteligente.
-    """
     try:
-        # Carregar arquivos
         y_orig, sr = librosa.load(original_path, sr=DEFAULT_SR)
         y_retake, _ = librosa.load(retake_path, sr=DEFAULT_SR)
 
-        # 1. Silence Stripping no Retake
-        # Remove silêncio inicial e final para focar apenas na fala útil
-        y_retake_trimmed, index = librosa.effects.trim(y_retake, top_db=SILENCE_TOP_DB)
-        
-        # Se o retake for muito curto ou silêncio total, aborta
-        if len(y_retake_trimmed) < sr * 0.1:  # Menos de 100ms
-            return json.dumps({"status": "error", "message": "Retake muito curto ou vazio"})
+        y_retake_trimmed, _ = librosa.effects.trim(y_retake, top_db=SILENCE_TOP_DB)
+        if len(y_retake_trimmed) < sr * 0.1:
+            return {"status": "error", "message": "Retake muito curto ou vazio"}
 
-        # 2. Alinhamento Temporal (Cross-Correlation)
-        # Se tivermos um start_time aproximado (do timecode), usamos para restringir a busca
-        # Senão, buscamos no áudio todo (pode ser lento para arquivos longos)
-        
-        # Para otimizar, vamos assumir que o retake deve estar próximo de onde o original estava
-        # Mas como é substituição, a ideia é encontrar *onde* o retake se encaixa melhor no contexto
-        # Se for substituição total de uma fala, o alinhamento pode ser feito comparando o início
-        
-        # Simplificação: Se o usuário não fornecer start_time, assumimos que o retake começa no início do arquivo original (0s)
-        # Mas o ideal é usar o timecode do nome do arquivo.
-        # Se start_time_ms for fornecido, convertemos para amostras
-        
-        start_sample = 0
-        if start_time_ms is not None:
-            start_sample = int((start_time_ms / 1000) * sr)
-        
-        # Margem de busca (ex: +/- 2 segundos ao redor do start_time esperado)
-        search_window = sr * 2 
+        start_sample = int(((start_time_ms or 0) / 1000) * sr)
+        search_window = sr * 2
         search_start = max(0, start_sample - search_window)
         search_end = min(len(y_orig), start_sample + len(y_retake_trimmed) + search_window)
-        
         y_orig_segment = y_orig[search_start:search_end]
-        
-        # Correlação Cruzada para alinhar
-        correlation = signal.correlate(y_orig_segment, y_retake_trimmed, mode='valid', method='fft')
-        peak = np.argmax(correlation)
-        # O pico indica onde o retake começa dentro do segmento
-        
-        # Ajuste do offset real no arquivo original
+
+        correlation = signal.correlate(y_orig_segment, y_retake_trimmed, mode="valid", method="fft")
+        peak = int(np.argmax(correlation))
         best_offset = search_start + peak
-        
-        # 3. Substituição (Crossfade ou Hard Cut)
-        # Para evitar cliques, idealmente faríamos um crossfade de 10-20ms nas bordas
-        fade_len = int(0.02 * sr) # 20ms
-        
-        # Criar fades no retake
+
+        fade_len = int(0.02 * sr)
         fade_in = np.linspace(0, 1, fade_len)
         fade_out = np.linspace(1, 0, fade_len)
-        
         if len(y_retake_trimmed) > 2 * fade_len:
             y_retake_trimmed[:fade_len] *= fade_in
             y_retake_trimmed[-fade_len:] *= fade_out
-            
-        # Inserir no original
-        # Se o retake for maior que o original a partir do ponto de inserção, estendemos
+
         end_sample = best_offset + len(y_retake_trimmed)
-        
         if end_sample > len(y_orig):
-            # Estender array original com zeros
             padding = np.zeros(end_sample - len(y_orig))
             y_final = np.concatenate((y_orig, padding))
         else:
             y_final = y_orig.copy()
-            
-        # Substituição simples (pode ser melhorado com crossfade na junção com o original)
-        # Aqui estamos sobrepondo (mix) ou substituindo? O usuário pediu "substituir o áudio original"
-        # Então vamos substituir (zerar o original naquele trecho e somar o novo)
-        
-        # Aplicar fade out no original antes da entrada do retake e fade in depois da saída
-        # (Isso é complexo de fazer perfeito sem saber o contexto exato, mas vamos tentar suavizar)
-        
-        y_final[best_offset:end_sample] = y_retake_trimmed
 
-        # Salvar resultado
+        y_final[best_offset:end_sample] = y_retake_trimmed
         sf.write(output_path, y_final, sr)
-        
-        return json.dumps({
+
+        return {
             "status": "success",
             "output_path": output_path,
             "alignment": {
                 "offset_ms": (best_offset / sr) * 1000,
-                "duration_ms": (len(y_retake_trimmed) / sr) * 1000
-            }
-        })
+                "duration_ms": (len(y_retake_trimmed) / sr) * 1000,
+            },
+        }
+    except Exception as error:
+        return {"status": "error", "message": str(error)}
 
-    except Exception as e:
-        return json.dumps({"status": "error", "message": str(e)})
+def sanitize_name(value):
+    return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in value).strip("_") or "track"
+
+def ensure_local_audio(source, workspace_dir):
+    if source.startswith("http://") or source.startswith("https://"):
+        url_path = urllib.parse.urlparse(source).path
+        filename = os.path.basename(url_path) or f"take_{int(time.time() * 1000)}.wav"
+        local_path = os.path.join(workspace_dir, filename)
+        with urllib.request.urlopen(source) as response, open(local_path, "wb") as target:
+            target.write(response.read())
+        return local_path
+    if source.startswith("/uploads/"):
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        return os.path.join(project_root, "public", source.lstrip("/"))
+    return source
+
+def upload_to_supabase(local_path, bucket_path):
+    supabase_url = os.environ.get("SUPABASE_URL")
+    service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not supabase_url or not service_key:
+        raise RuntimeError("SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY sao obrigatorios")
+
+    endpoint = f"{supabase_url.rstrip('/')}/storage/v1/object/uploads/{bucket_path}"
+    with open(local_path, "rb") as handle:
+        data = handle.read()
+
+    request = urllib.request.Request(
+        endpoint,
+        data=data,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {service_key}",
+            "apikey": service_key,
+            "Content-Type": "audio/wav" if local_path.lower().endswith(".wav") else "application/zip",
+            "x-upsert": "true",
+        },
+    )
+    with urllib.request.urlopen(request):
+        pass
+
+    public_url = f"{supabase_url.rstrip('/')}/storage/v1/object/public/uploads/{bucket_path}"
+    return {"storage_path": bucket_path, "public_url": public_url}
+
+def generate_full_track(active_takes):
+    duration_ms = 0
+    segments = []
+    for take in active_takes:
+        local_path = take["localPath"]
+        start_ms = int(float(take.get("startTimeSeconds", 0)) * 1000)
+        segment = AudioSegment.from_file(local_path)
+        end_ms = start_ms + len(segment)
+        duration_ms = max(duration_ms, end_ms)
+        segments.append((start_ms, segment))
+
+    timeline = AudioSegment.silent(duration=max(duration_ms, 1))
+    for start_ms, segment in segments:
+        timeline = timeline.overlay(segment, position=start_ms)
+    return timeline
+
+def generate_multitrack(active_takes):
+    grouped = {}
+    for take in active_takes:
+        key = take.get("trackName") or f"{take.get('characterName', 'Unknown')} - {take.get('actorName', 'Unknown')}"
+        grouped.setdefault(key, []).append(take)
+
+    rendered = {}
+    for track_name, track_takes in grouped.items():
+        duration_ms = 0
+        clips = []
+        for take in track_takes:
+            start_ms = int(float(take.get("startTimeSeconds", 0)) * 1000)
+            segment = AudioSegment.from_file(take["localPath"])
+            end_ms = start_ms + len(segment)
+            duration_ms = max(duration_ms, end_ms)
+            clips.append((start_ms, segment))
+
+        timeline = AudioSegment.silent(duration=max(duration_ms, 1))
+        for start_ms, segment in clips:
+            timeline = timeline.overlay(segment, position=start_ms)
+        rendered[track_name] = timeline
+    return rendered
+
+def execute_bounce(payload):
+    takes = payload.get("takes", [])
+    mode = payload.get("mode", "full_track")
+    production_id = payload.get("productionId", "production")
+    timestamp = int(time.time())
+
+    if not takes:
+        return {"status": "error", "message": "Nenhum take ativo informado"}
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        prepared_takes = []
+        for take in takes:
+            local_path = ensure_local_audio(take["audioUrl"], temp_dir)
+            if not os.path.exists(local_path):
+                continue
+            enriched = dict(take)
+            enriched["localPath"] = local_path
+            prepared_takes.append(enriched)
+
+        if not prepared_takes:
+            return {"status": "error", "message": "Nao foi possivel baixar takes para processamento"}
+
+        outputs = []
+        if mode == "multitrack":
+            rendered_tracks = generate_multitrack(prepared_takes)
+            export_dir = os.path.join(temp_dir, "multitrack")
+            os.makedirs(export_dir, exist_ok=True)
+            zip_path = os.path.join(temp_dir, f"{sanitize_name(production_id)}_{timestamp}_multitrack.zip")
+
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                for track_name, segment in rendered_tracks.items():
+                    filename = f"{sanitize_name(track_name)}.wav"
+                    local_track_path = os.path.join(export_dir, filename)
+                    segment.export(local_track_path, format="wav")
+                    archive.write(local_track_path, arcname=filename)
+
+            storage_info = upload_to_supabase(zip_path, f"bounces/{sanitize_name(production_id)}/multitrack_{timestamp}.zip")
+            outputs.append({
+                "type": "multitrack_zip",
+                "local_path": zip_path,
+                "storage_path": storage_info["storage_path"],
+                "public_url": storage_info["public_url"],
+            })
+        else:
+            timeline = generate_full_track(prepared_takes)
+            full_mix_path = os.path.join(temp_dir, f"{sanitize_name(production_id)}_{timestamp}_full_track.wav")
+            timeline.export(full_mix_path, format="wav")
+            storage_info = upload_to_supabase(full_mix_path, f"bounces/{sanitize_name(production_id)}/full_track_{timestamp}.wav")
+            outputs.append({
+                "type": "full_track",
+                "local_path": full_mix_path,
+                "storage_path": storage_info["storage_path"],
+                "public_url": storage_info["public_url"],
+            })
+
+        return {"status": "success", "mode": mode, "outputs": outputs}
+
+def parse_bounce_payload(raw_payload):
+    try:
+        decoded = base64.b64decode(raw_payload.encode("utf-8")).decode("utf-8")
+        return json.loads(decoded)
+    except Exception as error:
+        raise RuntimeError(f"Payload de bounce invalido: {error}")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 4:
-        print(json.dumps({"status": "error", "message": "Uso: python process_audio.py <original> <retake> <output> [start_time_ms]"}))
+    try:
+        if len(sys.argv) >= 3 and sys.argv[1] == "bounce":
+            payload = parse_bounce_payload(sys.argv[2])
+            print(json.dumps(execute_bounce(payload)))
+            sys.exit(0)
+
+        if len(sys.argv) < 4:
+            print(json.dumps({"status": "error", "message": "Uso: python process_audio.py <original> <retake> <output> [start_time_ms]"}))
+            sys.exit(1)
+
+        original = sys.argv[1]
+        retake = sys.argv[2]
+        output = sys.argv[3]
+        start_ms = float(sys.argv[4]) if len(sys.argv) > 4 else 0
+        print(json.dumps(process_audio(original, retake, output, start_ms)))
+    except Exception as error:
+        print(json.dumps({"status": "error", "message": str(error)}))
         sys.exit(1)
-
-    original = sys.argv[1]
-    retake = sys.argv[2]
-    output = sys.argv[3]
-    start_ms = float(sys.argv[4]) if len(sys.argv) > 4 else 0
-
-    print(process_audio(original, retake, output, start_ms))

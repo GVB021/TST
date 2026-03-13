@@ -121,6 +121,21 @@ export const characters = pgTable("characters", {
   };
 });
 
+export const timelineTracks = pgTable("timeline_tracks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  productionId: varchar("production_id").notNull().references(() => productions.id),
+  name: text("name").notNull(),
+  characterName: text("character_name").notNull(),
+  actorName: text("actor_name").notNull(),
+  color: text("color").notNull().default("#60A5FA"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => {
+  return {
+    productionIdIdx: index("timeline_tracks_production_id_idx").on(table.productionId),
+    uniqueTrackPerPair: uniqueIndex("timeline_tracks_prod_character_actor_idx").on(table.productionId, table.characterName, table.actorName),
+  };
+});
+
 export const sessions = pgTable("recording_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   productionId: varchar("production_id").notNull().references(() => productions.id),
@@ -153,11 +168,14 @@ export const sessionParticipants = pgTable("session_participants", {
 export const takes = pgTable("takes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   sessionId: varchar("session_id").notNull().references(() => sessions.id),
+  trackId: varchar("track_id").references(() => timelineTracks.id),
   characterId: varchar("character_id").notNull().references(() => characters.id),
   voiceActorId: varchar("voice_actor_id").notNull().references(() => users.id),
   lineIndex: integer("line_index").notNull(),
+  startTimeSeconds: real("start_time_seconds").notNull().default(0),
   audioUrl: text("audio_url").notNull(),
   durationSeconds: real("duration_seconds").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
   isPreferred: boolean("is_preferred").default(false),
   qualityScore: real("quality_score"),
   aiRecommended: boolean("ai_recommended").default(false),
@@ -202,6 +220,7 @@ export const insertStudioMembershipSchema = createInsertSchema(studioMemberships
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
 export const insertProductionSchema = createInsertSchema(productions).omit({ id: true, createdAt: true });
 export const insertCharacterSchema = createInsertSchema(characters).omit({ id: true });
+export const insertTimelineTrackSchema = createInsertSchema(timelineTracks).omit({ id: true, createdAt: true });
 export const insertSessionSchema = createInsertSchema(sessions).omit({ id: true, createdAt: true });
 export const insertSessionParticipantSchema = createInsertSchema(sessionParticipants).omit({ id: true });
 export const insertTakeSchema = createInsertSchema(takes).omit({ id: true, createdAt: true });
@@ -218,6 +237,7 @@ export type StudioMembership = typeof studioMemberships.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type Production = typeof productions.$inferSelect;
 export type Character = typeof characters.$inferSelect;
+export type TimelineTrack = typeof timelineTracks.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type SessionParticipant = typeof sessionParticipants.$inferSelect;
 export type Take = typeof takes.$inferSelect;

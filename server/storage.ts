@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, asc, sql } from "drizzle-orm";
 import {
   studios,
   users,
@@ -13,6 +13,7 @@ import {
   platformSettings,
   auditLog,
   takes,
+  timelineTracks,
   notifications,
   type Studio,
   type User,
@@ -26,6 +27,7 @@ import {
   type PlatformSetting,
   type AuditLog,
   type Take,
+  type TimelineTrack,
   type Notification,
   insertStudioSchema,
   insertProductionSchema,
@@ -33,6 +35,7 @@ import {
   insertSessionSchema,
   insertSessionParticipantSchema,
   insertTakeSchema,
+  insertTimelineTrackSchema,
   insertAuditLogSchema,
   insertStaffSchema,
   insertPlatformSettingSchema,
@@ -47,6 +50,7 @@ type InsertCharacter = z.infer<typeof insertCharacterSchema>;
 type InsertSession = z.infer<typeof insertSessionSchema>;
 type InsertSessionParticipant = z.infer<typeof insertSessionParticipantSchema>;
 type InsertTake = z.infer<typeof insertTakeSchema>;
+type InsertTimelineTrack = z.infer<typeof insertTimelineTrackSchema>;
 type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 type InsertStaff = z.infer<typeof insertStaffSchema>;
 type InsertPlatformSetting = z.infer<typeof insertPlatformSettingSchema>;
@@ -79,6 +83,9 @@ export interface IStorage {
 
   getTakes(sessionId: string): Promise<Take[]>;
   createTake(take: InsertTake): Promise<Take>;
+  getOrCreateTimelineTrack(productionId: string, characterName: string, actorName: string): Promise<TimelineTrack>;
+  getProductionTimeline(productionId: string): Promise<Array<TimelineTrack & { takes: Take[] }>>;
+  getActiveTakesForProduction(productionId: string): Promise<Array<Take & { trackName: string; characterName: string; actorName: string }>>;
   updateTakeAudioUrl(takeId: string, audioUrl: string): Promise<void>;
   setPreferredTake(takeId: string): Promise<Take>;
 
@@ -240,8 +247,66 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(takes).where(eq(takes.sessionId, sessionId));
   }
 
+  async getOrCreateTimelineTrack(productionId: string, characterName: string, actorName: string): Promise<TimelineTrack> {
+    const normalizedCharacter = (characterName || "Unknown").trim() || "Unknown";
+    const normalizedActor = (actorName || "Unknown").trim() || "Unknown";
+
+    const [existing] = await db.select()
+      .from(timelineTracks)
+      .where(and(
+        eq(timelineTracks.productionId, productionId),
+        eq(timelineTracks.characterName, normalizedCharacter),
+        eq(timelineTracks.actorName, normalizedActor),
+      ));
+
+    if (existing) return existing;
+
+    const palette = ["#60A5FA", "#A78BFA", "#34D399", "#F59E0B", "#F472B6", "#22D3EE", "#FB7185"];
+    const hashSource = `${productionId}:${normalizedCharacter}:${normalizedActor}`;
+    const hash = Array.from(hashSource).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const color = palette[hash % palette.length];
+
+    const [created] = await db.insert(timelineTracks).values({
+      productionId,
+      name: `${normalizedCharacter} - ${normalizedActor}`,
+      characterName: normalizedCharacter,
+      actorName: normalizedActor,
+      color,
+    } satisfies InsertTimelineTrack).returning();
+
+    return created;
+  }
+
   async createTake(take: InsertTake): Promise<Take> {
-    const [newTake] = await db.insert(takes).values(take).returning();
+    const normalizedTake = {
+      ...take,
+      startTimeSeconds: Number(take.startTimeSeconds || 0),
+      durationSeconds: Number(take.durationSeconds || 0),
+      isActive: take.isActive ?? true,
+    };
+
+    const [newTake] = await db.insert(takes).values(normalizedTake).returning();
+
+    if (newTake.trackId && newTake.isActive) {
+      const newStart = Number(newTake.startTimeSeconds || 0);
+      const newEnd = newStart + Number(newTake.durationSeconds || 0);
+
+      const overlapping = await db.select({ id: takes.id })
+        .from(takes)
+        .where(and(
+          eq(takes.trackId, newTake.trackId),
+          eq(takes.isActive, true),
+          sql`${takes.id} <> ${newTake.id}`,
+          sql`${newStart} < (${takes.startTimeSeconds} + ${takes.durationSeconds})`,
+          sql`${newEnd} > ${takes.startTimeSeconds}`,
+        ));
+
+      if (overlapping.length > 0) {
+        await db.update(takes)
+          .set({ isActive: false })
+          .where(inArray(takes.id, overlapping.map(t => t.id)));
+      }
+    }
 
     if (newTake.qualityScore !== null) {
       const existingTakes = await db.select()
@@ -271,6 +336,111 @@ export class DatabaseStorage implements IStorage {
     }
 
     return newTake;
+  }
+
+  async getProductionTimeline(productionId: string): Promise<Array<TimelineTrack & { takes: Take[] }>> {
+    const rows = await db
+      .select({
+        trackId: timelineTracks.id,
+        trackProductionId: timelineTracks.productionId,
+        trackName: timelineTracks.name,
+        trackCharacterName: timelineTracks.characterName,
+        trackActorName: timelineTracks.actorName,
+        trackColor: timelineTracks.color,
+        trackCreatedAt: timelineTracks.createdAt,
+        takeId: takes.id,
+        takeSessionId: takes.sessionId,
+        takeTrackId: takes.trackId,
+        takeCharacterId: takes.characterId,
+        takeVoiceActorId: takes.voiceActorId,
+        takeLineIndex: takes.lineIndex,
+        takeStartTimeSeconds: takes.startTimeSeconds,
+        takeAudioUrl: takes.audioUrl,
+        takeDurationSeconds: takes.durationSeconds,
+        takeIsActive: takes.isActive,
+        takeIsPreferred: takes.isPreferred,
+        takeQualityScore: takes.qualityScore,
+        takeAiRecommended: takes.aiRecommended,
+        takeCreatedAt: takes.createdAt,
+      })
+      .from(timelineTracks)
+      .leftJoin(takes, and(
+        eq(takes.trackId, timelineTracks.id),
+        eq(takes.isActive, true),
+      ))
+      .where(eq(timelineTracks.productionId, productionId))
+      .orderBy(asc(timelineTracks.name), asc(takes.startTimeSeconds));
+
+    const byTrack = new Map<string, TimelineTrack & { takes: Take[] }>();
+
+    for (const row of rows) {
+      const existing = byTrack.get(row.trackId) || {
+        id: row.trackId,
+        productionId: row.trackProductionId,
+        name: row.trackName,
+        characterName: row.trackCharacterName,
+        actorName: row.trackActorName,
+        color: row.trackColor,
+        createdAt: row.trackCreatedAt,
+        takes: [],
+      };
+
+      if (row.takeId) {
+        existing.takes.push({
+          id: row.takeId,
+          sessionId: row.takeSessionId!,
+          trackId: row.takeTrackId,
+          characterId: row.takeCharacterId!,
+          voiceActorId: row.takeVoiceActorId!,
+          lineIndex: row.takeLineIndex!,
+          startTimeSeconds: row.takeStartTimeSeconds || 0,
+          audioUrl: row.takeAudioUrl!,
+          durationSeconds: row.takeDurationSeconds || 0,
+          isActive: row.takeIsActive ?? true,
+          isPreferred: row.takeIsPreferred,
+          qualityScore: row.takeQualityScore,
+          aiRecommended: row.takeAiRecommended,
+          createdAt: row.takeCreatedAt,
+        });
+      }
+
+      byTrack.set(row.trackId, existing);
+    }
+
+    return Array.from(byTrack.values());
+  }
+
+  async getActiveTakesForProduction(productionId: string): Promise<Array<Take & { trackName: string; characterName: string; actorName: string }>> {
+    const rows = await db
+      .select({
+        id: takes.id,
+        sessionId: takes.sessionId,
+        trackId: takes.trackId,
+        characterId: takes.characterId,
+        voiceActorId: takes.voiceActorId,
+        lineIndex: takes.lineIndex,
+        startTimeSeconds: takes.startTimeSeconds,
+        audioUrl: takes.audioUrl,
+        durationSeconds: takes.durationSeconds,
+        isActive: takes.isActive,
+        isPreferred: takes.isPreferred,
+        qualityScore: takes.qualityScore,
+        aiRecommended: takes.aiRecommended,
+        createdAt: takes.createdAt,
+        trackName: timelineTracks.name,
+        characterName: timelineTracks.characterName,
+        actorName: timelineTracks.actorName,
+      })
+      .from(takes)
+      .innerJoin(sessions, eq(takes.sessionId, sessions.id))
+      .innerJoin(timelineTracks, eq(takes.trackId, timelineTracks.id))
+      .where(and(
+        eq(sessions.productionId, productionId),
+        eq(takes.isActive, true),
+      ))
+      .orderBy(asc(timelineTracks.name), asc(takes.startTimeSeconds));
+
+    return rows;
   }
 
   async updateTakeAudioUrl(takeId: string, audioUrl: string): Promise<void> {
@@ -393,8 +563,11 @@ export class DatabaseStorage implements IStorage {
         characterId: takes.characterId,
         voiceActorId: takes.voiceActorId,
         lineIndex: takes.lineIndex,
+        trackId: takes.trackId,
+        startTimeSeconds: takes.startTimeSeconds,
         audioUrl: takes.audioUrl,
         durationSeconds: takes.durationSeconds,
+        isActive: takes.isActive,
         isPreferred: takes.isPreferred,
         qualityScore: takes.qualityScore,
         aiRecommended: takes.aiRecommended,
@@ -406,6 +579,7 @@ export class DatabaseStorage implements IStorage {
         productionName: productions.name,
         studioId: sessions.studioId,
         studioName: studios.name,
+        trackName: timelineTracks.name,
       })
       .from(takes)
       .innerJoin(sessions, eq(takes.sessionId, sessions.id))
@@ -413,6 +587,7 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(studios, eq(sessions.studioId, studios.id))
       .leftJoin(characters, eq(takes.characterId, characters.id))
       .leftJoin(users, eq(takes.voiceActorId, users.id))
+      .leftJoin(timelineTracks, eq(takes.trackId, timelineTracks.id))
       .orderBy(desc(takes.createdAt));
 
     if (whereClause) {

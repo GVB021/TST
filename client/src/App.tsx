@@ -1,10 +1,11 @@
-import { Switch, Route, Redirect, Router as WouterRouter } from "wouter";
+import { Switch, Route, Redirect, Router as WouterRouter, useSearch } from "wouter";
 import { memoryHook, memorySearchHook } from "@/lib/memory-router";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
+import { useStudios } from "@/hooks/use-studios";
 import { Loader2 } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
@@ -24,6 +25,7 @@ const Members = lazy(() => import("@/pages/members"));
 const StudioAdmin = lazy(() => import("@/pages/studio-admin"));
 const Takes = lazy(() => import("@/pages/takes"));
 const Profile = lazy(() => import("@/pages/profile"));
+const Daw = lazy(() => import("@/pages/daw"));
 
 import { StudioLayout } from "@/components/layout/studio-layout";
 
@@ -78,6 +80,41 @@ function StudioSelectRoute() {
   return <StudioSelect />;
 }
 
+function DawRoute() {
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const { data: studios, isLoading: isStudiosLoading } = useStudios();
+  const search = useSearch();
+
+  if (isAuthLoading || isStudiosLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Redirect to="/login" replace />;
+  }
+
+  const searchParams = new URLSearchParams(search || "");
+  const studioIdFromQuery = searchParams.get("studioId");
+  const availableStudios = studios || [];
+  const resolvedStudioId = availableStudios.find((studio) => studio.id === studioIdFromQuery)?.id || availableStudios[0]?.id;
+
+  if (!resolvedStudioId) {
+    return <Redirect to="/studios" replace />;
+  }
+
+  return (
+    <StudioLayout studioId={resolvedStudioId}>
+      <ErrorBoundary>
+        <Daw studioId={resolvedStudioId} />
+      </ErrorBoundary>
+    </StudioLayout>
+  );
+}
+
 function Router() {
   return (
     <Suspense fallback={
@@ -97,6 +134,9 @@ function Router() {
 
         <Route path="/profile">
           {() => <ProtectedRoute component={Profile} />}
+        </Route>
+        <Route path="/daw">
+          {() => <DawRoute />}
         </Route>
 
         <Route path="/studio/:studioId/dashboard">

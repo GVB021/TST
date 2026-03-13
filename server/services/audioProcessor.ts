@@ -1,12 +1,13 @@
 import { exec } from "child_process";
 import path from "path";
-import fs from "fs";
+import fs from "node:fs";
 
 interface AudioMetadata {
   character: string;
   actor: string;
   timecode: string;
   startTimeMs: number;
+  startTimeSeconds: number;
 }
 
 interface ProcessingResult {
@@ -28,47 +29,126 @@ export class AudioProcessor {
     this.bounceScriptPath = path.join(process.cwd(), "server", "scripts", "bounce_track.py");
   }
 
-  /**
-   * Extrai metadados do nome do arquivo.
-   * Formato esperado: Personagem_Dublador_HH:MM:SS.wav
-   */
   parseMetadata(filename: string): AudioMetadata | null {
-    // Remover extensão
     const name = path.basename(filename, path.extname(filename));
-    const parts = name.split("_");
-    
-    // Tenta encontrar o timecode (formato HH:MM:SS, HH-MM-SS ou HHMMSS)
-    // Procura do fim para o começo, pois Personagem ou Dublador podem ter underline
-    const timecodeIndex = parts.findIndex(p => 
-      /^\d{2}[:\-]\d{2}[:\-]\d{2}$/.test(p) || /^\d{6}$/.test(p)
-    );
-    
-    if (timecodeIndex === -1) {
-        return null;
-    }
+    const timecodeMatch = Array.from(name.matchAll(/(\d{2}[:\-]\d{2}[:\-]\d{2}(?:\.\d+)?|\d{6}(?:\.\d+)?)/g)).at(-1);
+    if (!timecodeMatch) return null;
 
-    let timecode = parts[timecodeIndex];
-    // Se for formato HHMMSS, converte para HH:MM:SS
-    if (/^\d{6}$/.test(timecode)) {
-      timecode = `${timecode.slice(0, 2)}:${timecode.slice(2, 4)}:${timecode.slice(4, 6)}`;
+    const rawTimecode = timecodeMatch[1];
+    const timecode = this.normalizeTimecode(rawTimecode);
+    if (!timecode) return null;
+
+    const withoutTimecode = name
+      .slice(0, timecodeMatch.index)
+      .replace(/[-_ ]+$/g, "")
+      .trim();
+
+    const bracketTokens = Array.from(withoutTimecode.matchAll(/[\[\{\(]([^\]\}\)]+)[\]\}\)]/g))
+      .map((match) => match[1]?.trim())
+      .filter((value): value is string => Boolean(value));
+
+    let character = "";
+    let actor = "";
+
+    if (bracketTokens.length >= 2) {
+      [character, actor] = bracketTokens;
     } else {
-      timecode = timecode.replace(/-/g, ":");
+      const plain = withoutTimecode.replace(/[\[\]\{\}\(\)]/g, " ").trim();
+      const splitByDelimiter = plain.split(/[-_]+/).map(token => token.trim()).filter(Boolean);
+      if (splitByDelimiter.length >= 2) {
+        character = splitByDelimiter.slice(0, splitByDelimiter.length - 1).join(" ").trim();
+        actor = splitByDelimiter[splitByDelimiter.length - 1]!.trim();
+      } else {
+        const splitBySpace = plain.split(/\s+/).map(token => token.trim()).filter(Boolean);
+        character = splitBySpace.slice(0, Math.max(splitBySpace.length - 1, 1)).join(" ").trim();
+        actor = splitBySpace.slice(Math.max(splitBySpace.length - 1, 0)).join(" ").trim();
+      }
     }
 
-    const actor = parts[timecodeIndex - 1] || "Unknown";
-    const character = parts.slice(0, timecodeIndex - 1).join("_") || "Unknown";
+    character = this.normalizeEntityName(character || "Unknown");
+    actor = this.normalizeEntityName(actor || "Unknown");
+
+    const startTimeSeconds = this.timecodeToSeconds(timecode);
 
     return {
       character,
       actor,
       timecode,
-      startTimeMs: this.timecodeToMs(timecode)
+      startTimeMs: Math.round(startTimeSeconds * 1000),
+      startTimeSeconds,
     };
   }
 
+  private normalizeEntityName(value: string): string {
+    return value
+      .replace(/[_\-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/^\w/, (match) => match.toUpperCase());
+  }
+
+  private normalizeTimecode(raw: string): string | null {
+    const normalized = raw.replace(/-/g, ":");
+    if (/^\d{6}(\.\d+)?$/.test(normalized)) {
+      const [base, decimal = ""] = normalized.split(".");
+      if (!base) return null;
+      const hh = base.slice(0, 2);
+      const mm = base.slice(2, 4);
+      const ss = base.slice(4, 6);
+      return decimal ? `${hh}:${mm}:${ss}.${decimal}` : `${hh}:${mm}:${ss}`;
+    }
+    if (/^\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(normalized)) {
+      return normalized;
+    }
+    return null;
+  }
+
+  timecodeToSeconds(tc: string): number {
+    const [hRaw = "0", mRaw = "0", sRaw = "0"] = tc.split(":");
+    const hours = Number(hRaw) || 0;
+    const minutes = Number(mRaw) || 0;
+    const seconds = Number(sRaw) || 0;
+    return (hours * 3600) + (minutes * 60) + seconds;
+  }
+
   timecodeToMs(tc: string): number {
-    const [h, m, s] = tc.split(":").map(Number);
-    return ((h * 3600) + (m * 60) + s) * 1000;
+    return Math.round(this.timecodeToSeconds(tc) * 1000);
+  }
+
+  buildTrackName(character: string, actor: string): string {
+    return `${this.normalizeEntityName(character || "Unknown")} - ${this.normalizeEntityName(actor || "Unknown")}`;
+  }
+
+  extractWavDurationSeconds(filePathOrBuffer: string | Buffer): number | null {
+    const sourceBuffer = Buffer.isBuffer(filePathOrBuffer)
+      ? filePathOrBuffer
+      : (fs.existsSync(filePathOrBuffer) ? fs.readFileSync(filePathOrBuffer) : null);
+
+    if (!sourceBuffer || sourceBuffer.length < 44) return null;
+    if (sourceBuffer.toString("ascii", 0, 4) !== "RIFF" || sourceBuffer.toString("ascii", 8, 12) !== "WAVE") return null;
+
+    let cursor = 12;
+    let byteRate = 0;
+    let dataSize = 0;
+
+    while (cursor + 8 <= sourceBuffer.length) {
+      const chunkId = sourceBuffer.toString("ascii", cursor, cursor + 4);
+      const chunkSize = sourceBuffer.readUInt32LE(cursor + 4);
+      const chunkStart = cursor + 8;
+
+      if (chunkId === "fmt " && chunkSize >= 16 && chunkStart + 8 <= sourceBuffer.length) {
+        byteRate = sourceBuffer.readUInt32LE(chunkStart + 8);
+      }
+
+      if (chunkId === "data") {
+        dataSize = chunkSize;
+      }
+
+      cursor = chunkStart + chunkSize + (chunkSize % 2);
+    }
+
+    if (!byteRate || !dataSize) return null;
+    return dataSize / byteRate;
   }
 
 
@@ -78,7 +158,6 @@ export class AudioProcessor {
     outputPath: string,
     startTimeMs?: number
   ): Promise<ProcessingResult> {
-    // ... (mesmo código do processRetake) ...
     return new Promise((resolve, reject) => {
       const pythonCmd = process.platform === "win32" ? "python" : "python3";
       

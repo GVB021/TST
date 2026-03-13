@@ -2006,9 +2006,9 @@ export default function RecordingRoom() {
         </div>
       </header>
 
-      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        <div className="flex flex-col w-full lg:w-[56%] border-b lg:border-b-0 lg:border-r border-border relative">
-          <div className="flex-1 relative overflow-hidden bg-black/40 border border-white/5 m-1 lg:m-1 rounded-xl">
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex flex-col" style={{ width: "56%", borderRight: "1px solid rgba(255,255,255,0.08)" }}>
+          <div className="flex-1 relative overflow-hidden" style={{ background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.06)", margin: "4px 4px 0 4px", borderRadius: "12px" }}>
             {production?.videoUrl ? (
               <video
                 ref={videoRef}
@@ -2085,9 +2085,9 @@ export default function RecordingRoom() {
             </div>
           )}
 
-          <div className="h-auto min-h-[6rem] lg:h-24 shrink-0 px-4 lg:px-5 py-3 flex flex-wrap lg:flex-nowrap items-center justify-between gap-4 bg-background/40 backdrop-blur-xl border-t border-border/10">
-            <div className="w-full lg:w-56 shrink-0 flex flex-col justify-center gap-1 h-full">
-              <div className="flex items-center justify-between text-[10px] mb-0.5 text-muted-foreground">
+          <div className="h-24 shrink-0 px-5 flex items-center justify-between" style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+            <div className="w-56 shrink-0 flex flex-col justify-center gap-1 h-full py-3">
+              <div className="flex items-center justify-between text-[10px] mb-0.5" style={{ color: "rgba(255,255,255,0.45)" }}>
                 <span className="uppercase tracking-wider">
                   {recordingStatus === "recording" ? "Ao Vivo" :
                     recordingStatus === "previewing" ? "Reproduzindo" :
@@ -2123,7 +2123,7 @@ export default function RecordingRoom() {
               />
             </div>
 
-            <div className="flex items-center gap-2 w-full lg:w-auto justify-center overflow-x-auto no-scrollbar py-2 lg:py-0">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => seek(-2)}
                 className="w-9 h-9 rounded-xl flex items-center justify-center transition-all" style={{ color: "rgba(255,255,255,0.45)", background: "rgba(255,255,255,0.05)" }}
@@ -2246,10 +2246,10 @@ export default function RecordingRoom() {
               </button>
             </div>
 
-            <div className="hidden lg:flex w-44 shrink-0 flex-col items-end gap-1.5">
+            <div className="w-44 shrink-0 flex flex-col items-end gap-1.5">
               {isLooping && (
                 <div className="flex flex-col items-end gap-1">
-                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <div className="flex items-center gap-1.5 text-[10px]" style={{ color: "rgba(255,255,255,0.45)" }}>
                     <span>Pre-roll</span>
                     <div className="flex gap-0.5">
                       {[0.5, 1, 2, 3].map((v) => (
@@ -2296,9 +2296,9 @@ export default function RecordingRoom() {
           </div>
         </div>
 
-        <div className="flex flex-col w-full lg:w-[44%] bg-muted/5 border-t lg:border-t-0 lg:border-l border-border/5">
-          <div className="h-11 shrink-0 px-5 flex items-center justify-between border-b border-white/5 bg-white/5">
-            <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+        <div className="flex flex-col" style={{ width: "44%", background: "rgba(255,255,255,0.02)" }}>
+          <div className="h-11 shrink-0 px-5 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.03)" }}>
+            <span className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.40)" }}>
               Roteiro
             </span>
             <span className="text-xs" style={{ color: "rgba(255,255,255,0.40)" }}>

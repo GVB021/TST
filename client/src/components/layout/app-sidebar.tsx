@@ -1,7 +1,7 @@
 import { memo, useMemo } from "react";
 import {
   Building2, Calendar, Film, LayoutDashboard,
-  Settings, Users, LogOut, Bell, ShieldCheck, Music, UserCircle
+  Settings, Users, LogOut, Bell, ShieldCheck, Music, UserCircle, Activity
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -44,6 +44,7 @@ export const AppSidebar = memo(function AppSidebar({ studioId }: AppSidebarProps
       items.push({ title: pt.nav.productions, url: `/studio/${studioId}/productions`, icon: Film });
     }
     items.push({ title: pt.nav.sessions, url: `/studio/${studioId}/sessions`, icon: Calendar });
+    items.push({ title: "Estúdio Virtual", url: "/daw", icon: Activity });
     if (isStudioAdmin) {
       items.push({ title: pt.nav.takes, url: `/studio/${studioId}/takes`, icon: Music });
     }

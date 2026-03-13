@@ -6,6 +6,7 @@ declare module "express" {
   }
 }
 import type { Server } from "http";
+import { execFile } from "child_process";
 import { storage } from "./storage";
 import { z } from "zod";
 import { db } from "./db";
@@ -554,7 +555,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/sessions/:sessionId/takes", requireAuth, upload.single("audio"), async (req, res) => {
     try {
       const sessionId = req.params.sessionId;
-      const { characterId, voiceActorId, lineIndex, durationSeconds, qualityScore } = req.body;
+      const { characterId, voiceActorId, lineIndex, durationSeconds, qualityScore, startTimeSeconds } = req.body;
 
       if (!characterId || !voiceActorId || lineIndex === undefined) {
         return res.status(400).json({ message: "Campos obrigatorios faltando" });
@@ -564,6 +565,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!sessionCheck) return;
 
       let audioUrl = req.body.audioUrl || "";
+      let parsedMetadata = req.file?.originalname ? audioProcessor.parseMetadata(req.file.originalname) : null;
+      let computedDurationSeconds = Number(durationSeconds) || 0;
 
       if (req.file) {
         const originalName = req.file.originalname || "";
@@ -585,19 +588,35 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           // Fallback to local
           audioUrl = `/uploads/${filename}`;
         }
+
+        parsedMetadata = parsedMetadata || audioProcessor.parseMetadata(filename);
+        computedDurationSeconds = computedDurationSeconds || Number(audioProcessor.extractWavDurationSeconds(req.file.buffer) || 0);
       }
 
       if (!audioUrl) {
         return res.status(400).json({ message: "Audio nao enviado" });
       }
 
+      const effectiveStartTime = Number(startTimeSeconds) || parsedMetadata?.startTimeSeconds || 0;
+      const characterName = (req.body.characterName || parsedMetadata?.character || "Unknown").trim();
+      const actorName = (req.body.voiceActorName || parsedMetadata?.actor || "Unknown").trim();
+
+      const track = await storage.getOrCreateTimelineTrack(
+        sessionCheck.productionId,
+        characterName,
+        actorName
+      );
+
       const take = await storage.createTake({
         sessionId,
+        trackId: track.id,
         characterId,
         voiceActorId,
         lineIndex: Number(lineIndex),
+        startTimeSeconds: effectiveStartTime,
         audioUrl,
-        durationSeconds: Number(durationSeconds) || 0,
+        durationSeconds: computedDurationSeconds,
+        isActive: true,
         qualityScore: qualityScore ? Number(qualityScore) : null,
       });
 
@@ -1226,37 +1245,115 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  // TIMELINE AUDIO PROCESSING
-  app.get("/api/timeline/files", requireAuth, async (req, res) => {
+  app.get("/api/productions/:productionId/timeline", requireAuth, async (req, res) => {
     try {
-      const files = fs.readdirSync(uploadsDir).filter(f => f.toLowerCase().endsWith(".wav"));
-      const processed = files.map(f => {
-        const meta = audioProcessor.parseMetadata(f);
-        return {
-          filename: f,
-          url: `/uploads/${f}`,
-          ...meta
-        };
-      }).filter(f => f.character && f.timecode); // Filter only valid ones
-      
-      logger.info(`[Timeline] Found ${files.length} .wav files, ${processed.length} valid metadata.`);
-      
-      // Group by Character + Actor
-      const groups: Record<string, any[]> = {};
-      processed.forEach(item => {
-        const key = `${item.character}::${item.actor}`;
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(item);
-      });
+      const production = await verifyProductionAccess(req, res, req.params.productionId);
+      if (!production) return;
 
-      // Sort by timecode inside groups
-      Object.keys(groups).forEach(key => {
-        groups[key].sort((a, b) => (a.startTimeMs || 0) - (b.startTimeMs || 0));
-      });
+      const tracks = await storage.getProductionTimeline(production.id);
+      const totalDurationSeconds = tracks.reduce((maxDuration, track) => {
+        const rowMax = track.takes.reduce((rowEnd, take) => {
+          const end = Number(take.startTimeSeconds || 0) + Number(take.durationSeconds || 0);
+          return Math.max(rowEnd, end);
+        }, 0);
+        return Math.max(maxDuration, rowMax);
+      }, 0);
 
-      res.json(groups);
+      res.status(200).json({
+        productionId: production.id,
+        tracks,
+        totalDurationSeconds,
+      });
     } catch (e: any) {
-      res.status(500).json({ message: e.message });
+      res.status(500).json({ message: e?.message || "Falha ao carregar timeline" });
+    }
+  });
+
+  app.post("/api/productions/:productionId/bounce", requireAuth, async (req, res) => {
+    try {
+      const production = await verifyProductionAccess(req, res, req.params.productionId);
+      if (!production) return;
+
+      const mode = req.body?.mode === "multitrack" ? "multitrack" : "full_track";
+      const activeTakes = await storage.getActiveTakesForProduction(production.id);
+      if (!activeTakes.length) {
+        return res.status(400).json({ message: "Nao ha takes ativos para bounce" });
+      }
+
+      const payload = {
+        mode,
+        productionId: production.id,
+        productionName: production.name,
+        takes: activeTakes.map((take) => ({
+          id: take.id,
+          trackId: take.trackId,
+          trackName: take.trackName,
+          characterName: take.characterName,
+          actorName: take.actorName,
+          audioUrl: take.audioUrl,
+          startTimeSeconds: Number(take.startTimeSeconds || 0),
+          durationSeconds: Number(take.durationSeconds || 0),
+        })),
+      };
+
+      const pythonCmd = process.platform === "win32" ? "python" : "python3";
+      const scriptPath = path.join(process.cwd(), "server", "scripts", "process_audio.py");
+      const encodedPayload = Buffer.from(JSON.stringify(payload)).toString("base64");
+
+      const result: any = await new Promise((resolve, reject) => {
+        execFile(
+          pythonCmd,
+          [scriptPath, "bounce", encodedPayload],
+          { timeout: 300000, maxBuffer: 10 * 1024 * 1024 },
+          (error, stdout, stderr) => {
+            if (error) {
+              return reject(error);
+            }
+
+            const lines = stdout.trim().split("\n").filter(Boolean);
+            const lastLine = lines[lines.length - 1];
+            if (!lastLine) {
+              return reject(new Error(stderr || "Sem resposta do script de bounce"));
+            }
+
+            try {
+              resolve(JSON.parse(lastLine));
+            } catch {
+              reject(new Error(stderr || "Resposta invalida do script de bounce"));
+            }
+          }
+        );
+      });
+
+      if (result?.status !== "success") {
+        return res.status(500).json({ message: result?.message || "Falha no bounce de audio" });
+      }
+
+      const outputs = await Promise.all((result.outputs || []).map(async (output: any) => {
+        const bucketPath: string | null = output?.storage_path || null;
+        let signedUrl: string | null = null;
+
+        if (bucketPath) {
+          const { data } = await supabase.storage.from("uploads").createSignedUrl(bucketPath, 3600);
+          signedUrl = data?.signedUrl || null;
+        }
+
+        return {
+          ...output,
+          signedUrl,
+        };
+      }));
+
+      res.status(200).json({
+        status: "success",
+        mode,
+        outputs,
+      });
+    } catch (e: any) {
+      if (e?.killed || String(e?.message || "").includes("timed out")) {
+        return res.status(504).json({ message: "Bounce demorou mais que o permitido. Tente novamente." });
+      }
+      res.status(500).json({ message: e?.message || "Erro ao iniciar bounce" });
     }
   });
 
