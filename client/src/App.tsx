@@ -9,6 +9,7 @@ import { useStudios } from "@/hooks/use-studios";
 import { Loader2 } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
+import { BackButton } from "@/components/nav/BackButton";
 
 const Landing = lazy(() => import("@/pages/landing"));
 const Login = lazy(() => import("@/pages/login"));
@@ -183,6 +184,7 @@ export default function App() {
         <ErrorBoundary>
           <WouterRouter hook={memoryHook} searchHook={memorySearchHook}>
             <Toaster />
+            <BackButton />
             <Router />
           </WouterRouter>
         </ErrorBoundary>
