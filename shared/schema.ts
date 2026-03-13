@@ -100,6 +100,7 @@ export const productions = pgTable("productions", {
   name: text("name").notNull(),
   description: text("description"),
   videoUrl: text("video_url"),
+  posterUrl: text("poster_url"),
   scriptJson: text("script_json"),
   status: text("status").notNull().default("planned"),
   createdAt: timestamp("created_at").defaultNow(),

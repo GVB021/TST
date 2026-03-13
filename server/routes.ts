@@ -358,7 +358,21 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/studios/:studioId/productions", requireAuth, requireStudioRole("studio_admin"), async (req, res) => {
     try {
-      const input = insertProductionSchema.parse({ ...req.body, studioId: req.params.studioId });
+      // Mock automatic poster generation if not provided
+      let posterUrl = req.body.posterUrl;
+      if (!posterUrl && req.body.name) {
+        // Simple mock: try to use a placeholder service with the movie name
+        // In a real app, this would call TMDB/OMDB API
+        const safeName = encodeURIComponent(req.body.name);
+        // Using a stylish placeholder service that generates text images
+        posterUrl = `https://placehold.co/600x900/1a1a1a/FFF?text=${safeName}`;
+      }
+
+      const input = insertProductionSchema.parse({ 
+        ...req.body, 
+        studioId: req.params.studioId,
+        posterUrl
+      });
       const prod = await storage.createProduction(input);
       res.status(201).json(prod);
     } catch (err) {
