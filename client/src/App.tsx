@@ -10,6 +10,7 @@ import { Loader2 } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { BackButton } from "@/components/nav/BackButton";
+import { RealtimeInvalidation } from "@/components/realtime/RealtimeInvalidation";
 
 const Landing = lazy(() => import("@/pages/landing"));
 const Login = lazy(() => import("@/pages/login"));
@@ -185,6 +186,7 @@ export default function App() {
           <WouterRouter hook={memoryHook} searchHook={memorySearchHook}>
             <Toaster />
             <BackButton />
+            <RealtimeInvalidation />
             <Router />
           </WouterRouter>
         </ErrorBoundary>

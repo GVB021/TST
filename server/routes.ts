@@ -10,12 +10,13 @@ import { execFile } from "child_process";
 import { storage } from "./storage";
 import { z } from "zod";
 import { db } from "./db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import {
   productions, characters, takes, users, studios, sessions, studioMemberships, userStudioRoles,
   type Production, type Session,
   insertProductionSchema, insertCharacterSchema, insertTakeSchema, insertSessionSchema,
 } from "@shared/schema";
+import { normalizePlatformRole } from "@shared/roles";
 import { requireAuth, requireAdmin, requireStudioAccess, requireStudioRole } from "./middleware/auth";
 import { logger } from "./lib/logger";
 import multer from "multer";
@@ -59,6 +60,40 @@ function getOriginalAudioForProduction(productionId: string) {
   return { ...entry, localPath };
 }
 
+function normalizeSegment(input: string) {
+  const raw = (input || "").trim() || "sem_nome";
+  const noAccents = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const snake = noAccents
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+  return snake || "sem_nome";
+}
+
+function normalizeTokenUpper(input: string) {
+  const raw = (input || "").trim() || "SEM_NOME";
+  const noAccents = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const token = noAccents
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toUpperCase();
+  return token || "SEM_NOME";
+}
+
+function normalizeTimecodeToken(input: string) {
+  const digits = String(input || "").replace(/\D/g, "");
+  return digits || "000000000";
+}
+
+function secondsToTimecodeToken(seconds: number) {
+  const totalMs = Math.max(0, Math.round((Number(seconds) || 0) * 1000));
+  const hh = String(Math.floor(totalMs / 3600000)).padStart(2, "0");
+  const mm = String(Math.floor((totalMs % 3600000) / 60000)).padStart(2, "0");
+  const ss = String(Math.floor((totalMs % 60000) / 1000)).padStart(2, "0");
+  const ms = String(totalMs % 1000).padStart(3, "0");
+  return `${hh}${mm}${ss}${ms}`;
+}
+
 async function ensureAudioFile(audioUrl: string): Promise<string | null> {
   if (!audioUrl) return null;
 
@@ -90,6 +125,40 @@ async function ensureAudioFile(audioUrl: string): Promise<string | null> {
   return resolved;
 }
 
+function sendFileWithRange(req: Request, res: Response, filePath: string, contentType = "audio/wav") {
+  const stat = fs.statSync(filePath);
+  const total = stat.size;
+  const range = String(req.headers.range || "");
+  res.setHeader("Accept-Ranges", "bytes");
+
+  if (!range) {
+    res.status(200);
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Length", String(total));
+    fs.createReadStream(filePath).pipe(res);
+    return;
+  }
+
+  const m = range.match(/bytes=(\d+)-(\d+)?/);
+  if (!m) {
+    res.status(416);
+    res.setHeader("Content-Range", `bytes */${total}`);
+    res.end();
+    return;
+  }
+
+  const start = Math.min(total - 1, Math.max(0, Number(m[1] || 0)));
+  const endRaw = m[2] ? Number(m[2]) : total - 1;
+  const end = Math.min(total - 1, Math.max(start, endRaw));
+  const chunkSize = end - start + 1;
+
+  res.status(206);
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Content-Range", `bytes ${start}-${end}/${total}`);
+  res.setHeader("Content-Length", String(chunkSize));
+  fs.createReadStream(filePath, { start, end }).pipe(res);
+}
+
 async function logAdminAction(req: Request, action: string, details?: string) {
   try {
     const userId = (req as any).user?.id;
@@ -101,7 +170,7 @@ async function verifyProductionAccess(req: Request, res: Response, productionId:
   const prod = await storage.getProduction(productionId);
   if (!prod) { res.status(404).json({ message: "Producao nao encontrada" }); return null; }
   const user = (req as any).user!;
-  if (user.role === "platform_owner") return prod;
+  if (normalizePlatformRole(user.role) === "platform_owner") return prod;
   const hasAccess = await storage.verifyUserStudioAccess(user.id, prod.studioId);
   if (!hasAccess) { res.status(403).json({ message: "Acesso negado" }); return null; }
   return prod;
@@ -111,7 +180,7 @@ async function verifySessionAccess(req: Request, res: Response, sessionId: strin
   const session = await storage.getSession(sessionId);
   if (!session) { res.status(404).json({ message: "Sessao nao encontrada" }); return null; }
   const user = (req as any).user!;
-  if (user.role === "platform_owner") return session;
+  if (normalizePlatformRole(user.role) === "platform_owner") return session;
   const hasAccess = await storage.verifyUserStudioAccess(user.id, session.studioId);
   if (!hasAccess) { res.status(403).json({ message: "Acesso negado" }); return null; }
   return session;
@@ -163,7 +232,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // STUDIOS
   app.get("/api/studios", requireAuth, async (req, res) => {
     const user = (req as any).user!;
-    if (user.role === "platform_owner") {
+    if (normalizePlatformRole(user.role) === "platform_owner") {
       const allStudios = await storage.getStudios();
       const studiosWithRoles = await Promise.all(
         allStudios.map(async (s) => ({ ...s, userRoles: ["platform_owner"] }))
@@ -186,6 +255,32 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.status(200).json(studio);
   });
 
+  const studioProfilePatchSchema = z.object({
+    data: z.record(z.any()),
+  }).strict();
+
+  app.get("/api/studios/:studioId/profile", requireAuth, requireStudioAccess, async (req, res) => {
+    try {
+      const profile = await storage.getStudioProfile(req.params.studioId);
+      return res.status(200).json({ profile });
+    } catch (err: any) {
+      return res.status(500).json({ message: err?.message || "Erro ao buscar perfil do estudio" });
+    }
+  });
+
+  app.patch("/api/studios/:studioId/profile", requireAuth, requireStudioRole("studio_admin"), async (req, res) => {
+    try {
+      const parsed = studioProfilePatchSchema.parse(req.body || {});
+      const profile = await storage.upsertStudioProfile(req.params.studioId, parsed.data || {});
+      return res.status(200).json({ profile });
+    } catch (err: any) {
+      if (err?.errors) {
+        return res.status(400).json({ message: err.errors?.[0]?.message || "Dados invalidos" });
+      }
+      return res.status(500).json({ message: err?.message || "Erro ao atualizar perfil do estudio" });
+    }
+  });
+
   app.post("/api/studios", requireAuth, requireAdmin, async (req, res) => {
     try {
       const body = req.body;
@@ -200,23 +295,49 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
       const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + Date.now();
       const ownerId = (req as any).user.id;
-      const studioData: any = {
-        name, slug, ownerId,
-        tradeName: body.tradeName || null, cnpj: body.cnpj || null,
-        legalRepresentative: body.legalRepresentative || null,
-        email: body.email || null, phone: body.phone || null, altPhone: body.altPhone || null,
-        street: body.street || null, addressNumber: body.addressNumber || null,
-        complement: body.complement || null, neighborhood: body.neighborhood || null,
-        city: body.city || null, state: body.state || null,
-        zipCode: body.zipCode || null, country: body.country || null,
-        recordingRooms: body.recordingRooms ? Number(body.recordingRooms) : null,
-        studioType: body.studioType || null,
-        website: body.website || null, instagram: body.instagram || null, linkedin: body.linkedin || null,
-        description: body.description || null,
-        foundedYear: body.foundedYear ? Number(body.foundedYear) : null,
-        employeeCount: body.employeeCount ? Number(body.employeeCount) : null,
-      };
+      const studioData: any = { name, slug, ownerId };
       const studio = await storage.createStudio(studioData, ownerId, studioAdminUserId || undefined);
+
+      const profileKeys = [
+        "tradeName",
+        "cnpj",
+        "legalRepresentative",
+        "email",
+        "phone",
+        "altPhone",
+        "street",
+        "addressNumber",
+        "complement",
+        "neighborhood",
+        "city",
+        "state",
+        "zipCode",
+        "country",
+        "recordingRooms",
+        "studioType",
+        "website",
+        "instagram",
+        "linkedin",
+        "description",
+        "foundedYear",
+        "employeeCount",
+      ] as const;
+
+      const profilePatch: Record<string, any> = {};
+      for (const k of profileKeys) {
+        const v = (body as any)[k];
+        if (typeof v === "string") {
+          const trimmed = v.trim();
+          if (trimmed) profilePatch[k] = trimmed;
+        } else if (typeof v === "number" && Number.isFinite(v)) {
+          profilePatch[k] = v;
+        } else if (v !== null && v !== undefined && v !== "") {
+          profilePatch[k] = v;
+        }
+      }
+      if (Object.keys(profilePatch).length) {
+        await storage.upsertStudioProfile(studio.id, profilePatch);
+      }
       if (studioAdminUserId) {
         await storage.createNotification({
           userId: studioAdminUserId,
@@ -609,29 +730,68 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       let localAudioFilePath: string | null = null;
 
       if (req.file) {
-        const originalName = req.file.originalname || "";
-        const safeName = originalName.replace(/[^a-zA-Z0-9_.\-]/g, "");
-        const filename = safeName || `take_${Date.now()}_${Math.random().toString(36).slice(2)}.wav`;
-        const filePath = path.join(uploadsDir, filename);
+        const providedTimecode = String(req.body.timecode || "");
+        const timecodeToken = providedTimecode ? normalizeTimecodeToken(providedTimecode) : secondsToTimecodeToken(Number(startTimeSeconds) || 0);
+
+        const [[studioRow], [productionRow], [characterRow], [actorRow]] = await Promise.all([
+          sessionCheck.studioId
+            ? db.select({ name: studios.name }).from(studios).where(eq(studios.id, sessionCheck.studioId))
+            : Promise.resolve([]),
+          sessionCheck.productionId
+            ? db.select({ name: productions.name }).from(productions).where(eq(productions.id, sessionCheck.productionId))
+            : Promise.resolve([]),
+          db.select({ name: characters.name }).from(characters).where(eq(characters.id, String(characterId))),
+          db.select({ artistName: users.artistName, displayName: users.displayName, fullName: users.fullName, firstName: users.firstName, lastName: users.lastName, email: users.email })
+            .from(users)
+            .where(eq(users.id, String(voiceActorId))),
+        ]);
+
+        const studioName = normalizeSegment(studioRow?.name || "");
+        const productionName = normalizeSegment(productionRow?.name || "");
+
+        const actorNameRaw =
+          String(req.body.voiceActorName || "").trim() ||
+          String(parsedMetadata?.actor || "").trim() ||
+          actorRow?.artistName ||
+          actorRow?.displayName ||
+          actorRow?.fullName ||
+          `${actorRow?.firstName || ""} ${actorRow?.lastName || ""}`.trim() ||
+          actorRow?.email ||
+          "";
+
+        const characterNameRaw =
+          String(req.body.characterName || "").trim() ||
+          String(parsedMetadata?.character || "").trim() ||
+          characterRow?.name ||
+          "";
+
+        const actorFolder = normalizeSegment(actorNameRaw);
+        const characterFolder = normalizeSegment(characterNameRaw);
+        const actorToken = normalizeTokenUpper(actorNameRaw);
+        const characterToken = normalizeTokenUpper(characterNameRaw);
+        const filename = `${characterToken}_${actorToken}_${timecodeToken}.wav`;
+
+        let localFilename = filename;
+        const localPath = path.join(uploadsDir, localFilename);
+        if (fs.existsSync(localPath)) {
+          localFilename = `${path.basename(filename, ".wav")}_${Date.now()}.wav`;
+        }
+        const filePath = path.join(uploadsDir, localFilename);
         fs.writeFileSync(filePath, req.file.buffer);
         localAudioFilePath = filePath;
 
+        const objectPath = [studioName, productionName, actorFolder, characterFolder, filename].filter(Boolean).join("/");
+
         try {
-          // Upload to Supabase Storage "uploads" bucket
-          const supabaseUrl = await uploadFile("uploads", filename, req.file.buffer, "audio/wav");
-          if (supabaseUrl) {
-            audioUrl = supabaseUrl;
-          } else {
-            audioUrl = `/uploads/${filename}`;
-          }
+          const supabaseUrl = await uploadFile("uploads", objectPath, req.file.buffer, req.file.mimetype || "audio/wav");
+          audioUrl = supabaseUrl || `/uploads/${localFilename}`;
         } catch (e) {
-          console.error("Failed to upload to Supabase:", e);
-          // Fallback to local
-          audioUrl = `/uploads/${filename}`;
+          audioUrl = `/uploads/${localFilename}`;
         }
 
         parsedMetadata = parsedMetadata || audioProcessor.parseMetadata(filename);
-        computedDurationSeconds = computedDurationSeconds || Number(audioProcessor.extractWavDurationSeconds(req.file.buffer) || 0);
+        computedDurationSeconds =
+          computedDurationSeconds || Number(audioProcessor.extractWavDurationSeconds(req.file.buffer) || 0);
       }
 
       if (!audioUrl) {
@@ -678,7 +838,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const user = (req as any).user!;
     const takesList = await storage.getTakes(req.params.sessionId);
 
-    if (user.role === "platform_owner") {
+    if (normalizePlatformRole(user.role) === "platform_owner") {
       return res.status(200).json(takesList);
     }
 
@@ -711,7 +871,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!takeRecord) return res.status(404).json({ message: "Take nao encontrado" });
       const userId = (req.user as any)?.id;
       const userRole = (req.user as any)?.role;
-      const isAdmin = userRole === "platform_owner" || userRole === "studio_admin";
+      const isAdmin = normalizePlatformRole(userRole) === "platform_owner" || String(userRole || "") === "studio_admin";
       if (!isAdmin && takeRecord.voiceActorId !== userId) {
         return res.status(403).json({ message: "Voce so pode excluir seus proprios takes" });
       }
@@ -727,7 +887,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     try {
       const user = (req as any).user!;
       const studioId = req.params.studioId;
-      if (user.role === "platform_owner") {
+      if (normalizePlatformRole(user.role) === "platform_owner") {
         const allTakes = await storage.getAllTakesGrouped();
         return res.status(200).json(allTakes);
       }
@@ -751,9 +911,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const take = takeList[0];
       const user = (req as any).user!;
       if (user.role !== "platform_owner") {
+        const isOwner = String(take.voiceActorId || "") === String(user.id || "");
         const roles = await storage.getUserRolesInStudio(user.id, take.studioId);
         const canAccess = roles.includes("studio_admin") || roles.includes("diretor") || roles.includes("engenheiro_audio");
-        if (!canAccess) {
+        if (!canAccess && !isOwner) {
           return res.status(403).json({ message: "Acesso negado" });
         }
       }
@@ -765,6 +926,28 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       fs.createReadStream(filePath).pipe(res);
     } catch (err: any) {
       res.status(500).json({ message: err?.message || "Erro ao baixar take" });
+    }
+  });
+
+  app.get("/api/takes/:id/stream", requireAuth, async (req, res) => {
+    try {
+      const takeList = await storage.getTakesByIds([req.params.id]);
+      if (takeList.length === 0) return res.status(404).json({ message: "Take nao encontrado" });
+      const take = takeList[0];
+      const user = (req as any).user!;
+      if (user.role !== "platform_owner") {
+        const isOwner = String(take.voiceActorId || "") === String(user.id || "");
+        const roles = await storage.getUserRolesInStudio(user.id, take.studioId);
+        const canAccess = roles.includes("studio_admin") || roles.includes("diretor") || roles.includes("engenheiro_audio");
+        if (!canAccess && !isOwner) {
+          return res.status(403).json({ message: "Acesso negado" });
+        }
+      }
+      const filePath = await ensureAudioFile(take.audioUrl);
+      if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ message: "Arquivo nao encontrado" });
+      sendFileWithRange(req, res, filePath, "audio/wav");
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Erro ao reproduzir take" });
     }
   });
 
@@ -1295,7 +1478,55 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const production = await verifyProductionAccess(req, res, req.params.productionId);
       if (!production) return;
 
-      const tracks = await storage.getProductionTimeline(production.id);
+      let tracks = await storage.getProductionTimeline(production.id);
+      if (!tracks.length) {
+        const orphanRows = await db
+          .select({
+            id: takes.id,
+            characterName: characters.name,
+            artistName: users.artistName,
+            displayName: users.displayName,
+            fullName: users.fullName,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            email: users.email,
+          })
+          .from(takes)
+          .innerJoin(sessions, eq(takes.sessionId, sessions.id))
+          .innerJoin(characters, eq(takes.characterId, characters.id))
+          .innerJoin(users, eq(takes.voiceActorId, users.id))
+          .where(and(
+            eq(sessions.productionId, production.id),
+            eq(takes.isActive, true),
+            sql`${takes.trackId} is null`,
+          ));
+
+        if (orphanRows.length) {
+          const cache = new Map<string, string>();
+          const updates: Array<{ id: string; trackId: string }> = [];
+          for (const row of orphanRows) {
+            const actorName =
+              row.artistName ||
+              row.displayName ||
+              row.fullName ||
+              `${row.firstName || ""} ${row.lastName || ""}`.trim() ||
+              row.email ||
+              "Unknown";
+            const characterName = row.characterName || "Unknown";
+            const key = `${characterName}::${actorName}`;
+            const cached = cache.get(key);
+            if (cached) {
+              updates.push({ id: row.id, trackId: cached });
+              continue;
+            }
+            const track = await storage.getOrCreateTimelineTrack(production.id, characterName, actorName);
+            cache.set(key, track.id);
+            updates.push({ id: row.id, trackId: track.id });
+          }
+          await Promise.all(updates.map((u) => db.update(takes).set({ trackId: u.trackId }).where(eq(takes.id, u.id))));
+          tracks = await storage.getProductionTimeline(production.id);
+        }
+      }
       const totalDurationSeconds = tracks.reduce((maxDuration, track) => {
         const rowMax = track.takes.reduce((rowEnd, take) => {
           const end = Number(take.startTimeSeconds || 0) + Number(take.durationSeconds || 0);

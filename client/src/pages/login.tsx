@@ -177,25 +177,10 @@ export default function Login() {
   }, [language]);
 
   const [form, setForm] = useState({
-    fullName: "", artistName: "", email: "", password: "",
-    phone: "", altPhone: "", birthDate: "", city: "", state: "", country: "",
-    mainLanguage: "", additionalLanguages: "", experience: "", specialty: "",
-    bio: "", portfolioUrl: "", studioId: "",
+    fullName: "",
+    email: "",
+    password: "",
   });
-
-  const [publicStudios, setPublicStudios] = useState<{ id: string; name: string }[]>([]);
-  const [studiosLoading, setStudiosLoading] = useState(false);
-
-  useEffect(() => {
-    if (mode === "register" && publicStudios.length === 0) {
-      setStudiosLoading(true);
-      fetch("/api/auth/studios-public")
-        .then(res => res.json())
-        .then(data => setPublicStudios(Array.isArray(data) ? data : []))
-        .catch(() => setPublicStudios([]))
-        .finally(() => setStudiosLoading(false));
-    }
-  }, [mode]);
 
   useEffect(() => {
     localStorage.setItem("vhub_language", language);
@@ -241,9 +226,7 @@ export default function Login() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.fullName || !form.email || !form.password || !form.phone ||
-        !form.city || !form.state || !form.country ||
-        !form.mainLanguage || !form.experience || !form.specialty || !form.bio || !form.studioId) {
+    if (!form.fullName || !form.email || !form.password) {
       toast({ title: language === "en" ? "Error" : "Erro", description: language === "en" ? "Fill all required fields." : "Preencha todos os campos obrigatorios.", variant: "destructive" });
       return;
     }
@@ -325,58 +308,14 @@ export default function Login() {
           <div className="text-center mb-8">
             <img src="/logo.svg" alt="V.HUB" className="h-12 w-12 mx-auto mb-4 drop-shadow-[0_0_15px_rgba(59,130,246,0.5)]" />
             <h1 className="text-3xl font-bold text-white mb-2">{authText.registerTitle}</h1>
-            <p className="text-slate-300/85">{authText.registerSubtitle}</p>
+            <p className="text-slate-300/85">{language === "en" ? "Create your account with the essentials." : "Crie sua conta com o essencial."}</p>
           </div>
 
-          <form onSubmit={handleRegister} className="bg-slate-950/60 backdrop-blur-2xl border border-white/15 rounded-2xl p-8 shadow-2xl space-y-8">
-            {/* Form Sections */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-white/80 uppercase tracking-wider border-b border-white/10 pb-2">{language === "en" ? "Personal Details" : "Dados Pessoais"}</h3>
-                <div className="space-y-4">
-                  <Input placeholder={authText.fullName} value={form.fullName} onChange={e => updateForm("fullName", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
-                  <Input placeholder={authText.artistName} value={form.artistName} onChange={e => updateForm("artistName", e.target.value)} className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
-                  <Input type="email" placeholder={authText.emailPlaceholder} value={form.email} onChange={e => updateForm("email", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
-                  <Input type="password" placeholder={authText.passwordPlaceholder} value={form.password} onChange={e => updateForm("password", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
-                  <div className="grid grid-cols-2 gap-4">
-                    <Input placeholder={authText.phone} value={form.phone} onChange={e => updateForm("phone", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
-                    <Input placeholder={authText.altPhone} value={form.altPhone} onChange={e => updateForm("altPhone", e.target.value)} className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
-                  </div>
-                  <Input type="date" placeholder={authText.birthDate} value={form.birthDate} onChange={e => updateForm("birthDate", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-white/80 uppercase tracking-wider border-b border-white/10 pb-2">{language === "en" ? "Location and Profile" : "Localização e Perfil"}</h3>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-3 gap-4">
-                     <Input placeholder={authText.city} value={form.city} onChange={e => updateForm("city", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
-                     <Input placeholder={authText.state} value={form.state} onChange={e => updateForm("state", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
-                     <Input placeholder={authText.country} value={form.country} onChange={e => updateForm("country", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
-                  </div>
-                  <Input placeholder={authText.mainLanguage} value={form.mainLanguage} onChange={e => updateForm("mainLanguage", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
-                  <Input placeholder={authText.additionalLanguages} value={form.additionalLanguages} onChange={e => updateForm("additionalLanguages", e.target.value)} className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
-                  <Input placeholder={authText.experience} value={form.experience} onChange={e => updateForm("experience", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
-                  <Input placeholder={authText.specialty} value={form.specialty} onChange={e => updateForm("specialty", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
-                  <Textarea placeholder={authText.bio} value={form.bio} onChange={e => updateForm("bio", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50 min-h-[80px] text-white placeholder:text-slate-400/70" />
-                  <Input placeholder={authText.portfolioUrl} value={form.portfolioUrl} onChange={e => updateForm("portfolioUrl", e.target.value)} className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
-                  
-                  {studiosLoading ? (
-                    <div className="flex justify-center p-2"><Loader2 className="animate-spin text-primary" /></div>
-                  ) : (
-                    <Select value={form.studioId} onValueChange={v => updateForm("studioId", v)}>
-                      <SelectTrigger className="bg-white/5 border-white/10 focus:border-primary/50">
-                        <SelectValue placeholder={authText.selectStudio} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {publicStudios.map(s => (
-                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
-              </div>
+          <form onSubmit={handleRegister} className="bg-slate-950/60 backdrop-blur-2xl border border-white/15 rounded-2xl p-8 shadow-2xl space-y-6">
+            <div className="max-w-lg mx-auto space-y-4">
+              <Input placeholder={authText.fullName} value={form.fullName} onChange={e => updateForm("fullName", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
+              <Input type="email" placeholder={authText.emailPlaceholder} value={form.email} onChange={e => updateForm("email", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
+              <Input type="password" placeholder={authText.passwordPlaceholder} value={form.password} onChange={e => updateForm("password", e.target.value)} required className="bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder:text-slate-400/70" />
             </div>
 
             <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-white/10">

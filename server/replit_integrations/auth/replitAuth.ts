@@ -25,12 +25,13 @@ export function verifyPassword(password: string, storedHash: string): boolean {
 }
 
 export function getSession() {
-  const sessionTtl = 7 * 24 * 60 * 60 * 1000;
+  const sessionTtlSeconds = 30 * 24 * 60 * 60;
+  const cookieMaxAgeMs = sessionTtlSeconds * 1000;
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
     pool: pool,
     createTableIfMissing: false,
-    ttl: sessionTtl,
+    ttl: sessionTtlSeconds,
     tableName: "http_sessions",
   });
   return session({
@@ -38,10 +39,12 @@ export function getSession() {
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
+    rolling: true,
     cookie: {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      maxAge: sessionTtl,
+      sameSite: "lax",
+      maxAge: cookieMaxAgeMs,
     },
   });
 }

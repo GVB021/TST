@@ -280,6 +280,16 @@ export default function Daw({ studioId }: { studioId: string }) {
             <Loader2 className="h-5 w-5 animate-spin mr-2" />
             Carregando timeline...
           </div>
+        ) : timelineQuery.isError ? (
+          <div className="h-40 flex flex-col items-center justify-center text-white/40 gap-2">
+            <Music4 className="h-6 w-6" />
+            {String((timelineQuery.error as any)?.message || "Falha ao carregar timeline")}
+          </div>
+        ) : !productionId ? (
+          <div className="h-40 flex flex-col items-center justify-center text-white/40 gap-2">
+            <Music4 className="h-6 w-6" />
+            Selecione uma producao para ver a timeline.
+          </div>
         ) : tracks.length === 0 ? (
           <div className="h-40 flex flex-col items-center justify-center text-muted-foreground gap-2 relative">
             <Music4 className="h-6 w-6" />

@@ -5,6 +5,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { setupVideoSync } from "./video-sync";
+import { setupRealtime, broadcastInvalidate } from "./realtime";
 import { pool } from "./db";
 import path from "path";
 
@@ -67,6 +68,18 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use((req, res, next) => {
+  res.on("finish", () => {
+    const isApi = req.path.startsWith("/api");
+    const isMutation = !["GET", "HEAD", "OPTIONS"].includes(req.method);
+    const ok = res.statusCode >= 200 && res.statusCode < 300;
+    if (isApi && isMutation && ok) {
+      broadcastInvalidate(req.method, req.path);
+    }
+  });
+  next();
+});
+
 async function ensureProductionsTableSchema() {
   await pool.query(`
     ALTER TABLE IF EXISTS productions
@@ -90,12 +103,36 @@ async function ensureProductionsTableSchema() {
   `);
 }
 
+async function ensureProfilesTables() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_profiles (
+      user_id varchar PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      data jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz DEFAULT now(),
+      updated_at timestamptz DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS user_profiles_user_id_idx ON user_profiles(user_id);`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS studio_profiles (
+      studio_id varchar PRIMARY KEY REFERENCES studios(id) ON DELETE CASCADE,
+      data jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz DEFAULT now(),
+      updated_at timestamptz DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS studio_profiles_studio_id_idx ON studio_profiles(studio_id);`);
+}
+
 (async () => {
   await ensureProductionsTableSchema();
+  await ensureProfilesTables();
   await setupAuth(app);
   registerAuthRoutes(app);
   await registerRoutes(httpServer, app);
   setupVideoSync(httpServer);
+  setupRealtime(app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
